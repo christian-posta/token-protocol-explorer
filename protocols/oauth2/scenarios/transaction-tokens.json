@@ -1,0 +1,215 @@
+{
+  "id": "oauth2-transaction-tokens",
+  "title": "Transaction Tokens (Draft)",
+  "description": "Demonstrating the IETF draft for Transaction Tokens (Txn-Tokens). Shows how a single, immutable token propagates user identity and authorization context securely down a multi-workload internal call chain.",
+  "rfc": "Txn-Tokens Draft",
+  "category": "OAuth 2.0",
+  "participants": [
+    {
+      "id": "client",
+      "label": "External App",
+      "type": "client"
+    },
+    {
+      "id": "api-gateway",
+      "label": "API Gateway",
+      "type": "proxy"
+    },
+    {
+      "id": "tts",
+      "label": "Txn-Token Service",
+      "type": "idp"
+    },
+    {
+      "id": "workload-a",
+      "label": "Service A",
+      "type": "server"
+    },
+    {
+      "id": "workload-b",
+      "label": "Service B",
+      "type": "server"
+    }
+  ],
+  "steps": [
+    {
+      "step": 1,
+      "from": "client",
+      "to": "api-gateway",
+      "label": "GET /orders",
+      "method": "GET",
+      "url": "https://api.example.com/orders",
+      "request_headers": {
+        "Authorization": "Bearer eyJ0eXAiOiJhdCtqd3QiLCJhbGciOiJIUzI1NiJ9..."
+      },
+      "request_body": null,
+      "response_status": 200,
+      "response_headers": {},
+      "artifacts": [],
+      "tokens": [
+        {
+          "name": "External Access Token",
+          "typ": "at+jwt",
+          "raw": "eyJ0eXAiOiJhdCtqd3QiLCJhbGciOiJIUzI1NiJ9.eyJpc3MiOiJodHRwczovL2F1dGguZXhhbXBsZS5jb20iLCJzdWIiOiJ1c2VyMTIzIiwiYXVkIjoiYXBpX2dhdGV3YXkiLCJleHAiOjE1NjIyNjYyMTYsImlhdCI6MTU2MjI2MjYxNn0.mock_sig_ext",
+          "header": {
+            "typ": "at+jwt",
+            "alg": "HS256"
+          },
+          "payload": {
+            "iss": "https://auth.example.com",
+            "sub": "user123",
+            "aud": "api_gateway",
+            "exp": 1562266216,
+            "iat": 1562262616
+          },
+          "signature_b64": "mock_sig_ext"
+        }
+      ],
+      "explanation": "An external client invokes the API Gateway using a standard OAuth 2.0 Access Token.",
+      "annotations": []
+    },
+    {
+      "step": 2,
+      "from": "api-gateway",
+      "to": "tts",
+      "label": "POST /txn-token",
+      "method": "POST",
+      "url": "https://tts.internal.example.com/token",
+      "request_headers": {
+        "Content-Type": "application/x-www-form-urlencoded",
+        "Authorization": "Basic YXBpX2dhdGV3YXk6c2VjcmV0"
+      },
+      "request_body": "grant_type=urn:ietf:params:oauth:grant-type:token-exchange&subject_token=eyJ0eXAiOiJhdCtqd3QiLCJhbGciOiJIUzI1NiJ9...&subject_token_type=urn:ietf:params:oauth:token-type:access_token&audience=internal_trust_domain&requested_token_type=urn:ietf:params:oauth:token-type:txn_token&scope=read_orders",
+      "response_status": 200,
+      "response_headers": {
+        "Content-Type": "application/json"
+      },
+      "response_body": {
+        "access_token": "eyJ0eXAiOiJ0eG4rand0IiwiYWxnIjoiSFMyNTYifQ...",
+        "issued_token_type": "urn:ietf:params:oauth:token-type:txn_token",
+        "token_type": "N/A",
+        "expires_in": 300
+      },
+      "artifacts": [],
+      "tokens": [
+        {
+          "name": "Transaction Token",
+          "typ": "txn+jwt",
+          "raw": "eyJ0eXAiOiJ0eG4rand0IiwiYWxnIjoiSFMyNTYifQ.eyJpYXQiOjE1NjIyNjI2MTYsImF1ZCI6ImludGVybmFsX3RydXN0X2RvbWFpbiIsImV4cCI6MTU2MjI2MjkxNiwidHhuIjoiOWI1ZjNiYTEtMmFlMS00MDcxLWFlNWQtYWJiNDQxMGFiZDUzIiwic3ViIjoidXNlcjEyMyIsInNjb3BlIjoicmVhZF9vcmRlcnMiLCJyZXFfd2wiOiJhcGlfZ2F0ZXdheSIsInRjdHgiOnsidGVuYW50X2lkIjoiMTIzIn19.mock_sig_txn",
+          "header": {
+            "typ": "txn+jwt",
+            "alg": "HS256"
+          },
+          "payload": {
+            "iat": 1562262616,
+            "aud": "internal_trust_domain",
+            "exp": 1562262916,
+            "txn": "9b5f3ba1-2ae1-4071-ae5d-abb4410abd53",
+            "sub": "user123",
+            "scope": "read_orders",
+            "req_wl": "api_gateway",
+            "tctx": {
+              "tenant_id": "123"
+            }
+          },
+          "signature_b64": "mock_sig_txn"
+        }
+      ],
+      "explanation": "The API Gateway presents the incoming token to the Txn-Token Service (TTS) to mint a Txn-Token. The TTS validates the external token and issues a new Txn-Token specifically scoped to the internal trust domain.",
+      "annotations": [
+        "The request relies on RFC 8693 Token Exchange, but uses the draft's new requested_token_type: 'urn:ietf:params:oauth:token-type:txn_token'.",
+        "The returned JWT includes draft-specific claims: 'txn' (a unique transaction ID), 'req_wl' (the workload that requested the token), and 'tctx' (immutable transaction context like tenant IDs).",
+        "The 'aud' claim is set to the internal trust domain, not a specific downstream service."
+      ],
+      "is_response": true
+    },
+    {
+      "step": 3,
+      "from": "api-gateway",
+      "to": "workload-a",
+      "label": "GET /internal/orders",
+      "method": "GET",
+      "url": "http://service-a.internal/orders",
+      "request_headers": {
+        "Txn-Token": "eyJ0eXAiOiJ0eG4rand0IiwiYWxnIjoiSFMyNTYifQ..."
+      },
+      "request_body": null,
+      "response_status": 200,
+      "response_headers": {},
+      "artifacts": [],
+      "tokens": [
+        {
+          "name": "Transaction Token",
+          "typ": "txn+jwt",
+          "raw": "eyJ0eXAiOiJ0eG4rand0IiwiYWxnIjoiSFMyNTYifQ.eyJpYXQiOjE1NjIyNjI2MTYsImF1ZCI6ImludGVybmFsX3RydXN0X2RvbWFpbiIsImV4cCI6MTU2MjI2MjkxNiwidHhuIjoiOWI1ZjNiYTEtMmFlMS00MDcxLWFlNWQtYWJiNDQxMGFiZDUzIiwic3ViIjoidXNlcjEyMyIsInNjb3BlIjoicmVhZF9vcmRlcnMiLCJyZXFfd2wiOiJhcGlfZ2F0ZXdheSIsInRjdHgiOnsidGVuYW50X2lkIjoiMTIzIn19.mock_sig_txn",
+          "header": {
+            "typ": "txn+jwt",
+            "alg": "HS256"
+          },
+          "payload": {
+            "iat": 1562262616,
+            "aud": "internal_trust_domain",
+            "exp": 1562262916,
+            "txn": "9b5f3ba1-2ae1-4071-ae5d-abb4410abd53",
+            "sub": "user123",
+            "scope": "read_orders",
+            "req_wl": "api_gateway",
+            "tctx": {
+              "tenant_id": "123"
+            }
+          },
+          "signature_b64": "mock_sig_txn"
+        }
+      ],
+      "explanation": "The API Gateway initiates a call to an internal workload (Service A), passing the Txn-Token as authorization.",
+      "annotations": [
+        "Notice the HTTP header used is 'Txn-Token', NOT 'Authorization: Bearer'. This is explicitly defined in §13.1 of the draft to prevent confusion with standard access tokens.",
+        "Service A verifies the JWT signature and ensures the 'aud' claim matches its internal trust domain."
+      ]
+    },
+    {
+      "step": 4,
+      "from": "workload-a",
+      "to": "workload-b",
+      "label": "GET /internal/db/orders",
+      "method": "GET",
+      "url": "http://service-b.internal/db/orders",
+      "request_headers": {
+        "Txn-Token": "eyJ0eXAiOiJ0eG4rand0IiwiYWxnIjoiSFMyNTYifQ..."
+      },
+      "request_body": null,
+      "response_status": 200,
+      "response_headers": {},
+      "artifacts": [],
+      "tokens": [
+        {
+          "name": "Transaction Token (Propagated)",
+          "typ": "txn+jwt",
+          "raw": "eyJ0eXAiOiJ0eG4rand0IiwiYWxnIjoiSFMyNTYifQ.eyJpYXQiOjE1NjIyNjI2MTYsImF1ZCI6ImludGVybmFsX3RydXN0X2RvbWFpbiIsImV4cCI6MTU2MjI2MjkxNiwidHhuIjoiOWI1ZjNiYTEtMmFlMS00MDcxLWFlNWQtYWJiNDQxMGFiZDUzIiwic3ViIjoidXNlcjEyMyIsInNjb3BlIjoicmVhZF9vcmRlcnMiLCJyZXFfd2wiOiJhcGlfZ2F0ZXdheSIsInRjdHgiOnsidGVuYW50X2lkIjoiMTIzIn19.mock_sig_txn",
+          "header": {
+            "typ": "txn+jwt",
+            "alg": "HS256"
+          },
+          "payload": {
+            "iat": 1562262616,
+            "aud": "internal_trust_domain",
+            "exp": 1562262916,
+            "txn": "9b5f3ba1-2ae1-4071-ae5d-abb4410abd53",
+            "sub": "user123",
+            "scope": "read_orders",
+            "req_wl": "api_gateway",
+            "tctx": {
+              "tenant_id": "123"
+            }
+          },
+          "signature_b64": "mock_sig_txn"
+        }
+      ],
+      "explanation": "Service A needs to call Service B. It passes the EXACT same Txn-Token it received unmodified. This maintains the immutable context throughout the entire call chain.",
+      "annotations": [
+        "Unlike standard Token Exchange (RFC 8693) where a new token is minted for every downstream hop, Txn-Tokens are minted once at the edge.",
+        "The 'txn' claim allows logs across all internal services (Gateway, Service A, Service B) to be perfectly correlated to the single external request."
+      ]
+    }
+  ]
+}
