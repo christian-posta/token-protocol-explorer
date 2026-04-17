@@ -37,6 +37,8 @@ const NAV: NavSection[] = [
     color: "text-indigo-400",
     items: [
       { label: "DPoP (RFC 9449)", href: "/oauth2/dpop" },
+      { label: "Token Exchange: Delegation", href: "/oauth2/token-exchange-delegation" },
+      { label: "Token Exchange: Impersonation", href: "/oauth2/token-exchange-impersonation" },
     ],
   },
 ];

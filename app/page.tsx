@@ -39,6 +39,8 @@ const PROTOCOLS = [
       "The industry-standard authorization framework. Explore advanced extension profiles like Proof-of-Possession (DPoP), PKCE, and token exchange.",
     scenarios: [
       { label: "DPoP (RFC 9449)", href: "/oauth2/dpop" },
+      { label: "Token Exchange: Delegation", href: "/oauth2/token-exchange-delegation" },
+      { label: "Token Exchange: Impersonation", href: "/oauth2/token-exchange-impersonation" },
     ],
   },
 ];

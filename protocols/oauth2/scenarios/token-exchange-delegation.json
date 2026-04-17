@@ -1,0 +1,225 @@
+{
+  "id": "oauth2-token-exchange-delegation",
+  "title": "Token Exchange — Delegation",
+  "description": "Demonstrating RFC 8693 Token Exchange for delegation. A frontend passes a token to an API, which exchanges it to call a downstream service, building a chain of custody using nested 'act' claims.",
+  "rfc": "RFC 8693",
+  "category": "OAuth 2.0",
+  "participants": [
+    {
+      "id": "client",
+      "label": "Frontend App",
+      "type": "client"
+    },
+    {
+      "id": "api-gateway",
+      "label": "Payment API",
+      "type": "proxy"
+    },
+    {
+      "id": "authz",
+      "label": "Authz Server",
+      "type": "idp"
+    },
+    {
+      "id": "backend",
+      "label": "Billing API",
+      "type": "server"
+    }
+  ],
+  "steps": [
+    {
+      "step": 1,
+      "from": "client",
+      "to": "api-gateway",
+      "label": "POST /checkout",
+      "method": "POST",
+      "url": "https://api.example.com/payments/checkout",
+      "request_headers": {
+        "Authorization": "Bearer eyJ0eXAiOiJhdCtqd3QiLCJhbGciOiJIUzI1NiJ9...",
+        "Content-Type": "application/json"
+      },
+      "request_body": {
+        "cart_id": "12345"
+      },
+      "response_status": 200,
+      "response_headers": {},
+      "artifacts": [],
+      "tokens": [
+        {
+          "name": "Frontend Access Token",
+          "typ": "at+jwt",
+          "raw": "eyJ0eXAiOiJhdCtqd3QiLCJhbGciOiJIUzI1NiJ9.eyJpc3MiOiJodHRwczovL2F1dGguZXhhbXBsZS5jb20iLCJzdWIiOiJhbGljZSIsImF1ZCI6InBheW1lbnRfYXBpIiwiZXhwIjoxNTYyMjY2MjE2LCJpYXQiOjE1NjIyNjI2MTZ9.mock_sig",
+          "header": {
+            "typ": "at+jwt",
+            "alg": "HS256"
+          },
+          "payload": {
+            "iss": "https://auth.example.com",
+            "sub": "alice",
+            "aud": "payment_api",
+            "exp": 1562266216,
+            "iat": 1562262616
+          },
+          "signature_b64": "mock_sig"
+        }
+      ],
+      "explanation": "The user (Alice) initiates an action from the Frontend Application. The Frontend sends a standard OAuth 2.0 Access Token to the Payment API.",
+      "annotations": []
+    },
+    {
+      "step": 2,
+      "from": "api-gateway",
+      "to": "authz",
+      "label": "POST /token (Exchange)",
+      "method": "POST",
+      "url": "https://auth.example.com/token",
+      "request_headers": {
+        "Content-Type": "application/x-www-form-urlencoded",
+        "Authorization": "Basic cGF5bWVudF9hcGk6c2VjcmV0"
+      },
+      "request_body": "grant_type=urn:ietf:params:oauth:grant-type:token-exchange&subject_token=eyJ0eXAiOiJhdCtqd3QiLCJhbGciOiJIUzI1NiJ9...&subject_token_type=urn:ietf:params:oauth:token-type:access_token&audience=billing_api",
+      "response_status": 200,
+      "response_headers": {
+        "Content-Type": "application/json"
+      },
+      "response_body": {
+        "access_token": "eyJ0eXAiOiJhdCtqd3QiLCJhbGciOiJIUzI1NiJ9...",
+        "issued_token_type": "urn:ietf:params:oauth:token-type:access_token",
+        "token_type": "Bearer",
+        "expires_in": 3600
+      },
+      "artifacts": [],
+      "tokens": [
+        {
+          "name": "Delegated Token (Payment API → Billing API)",
+          "typ": "at+jwt",
+          "raw": "eyJ0eXAiOiJhdCtqd3QiLCJhbGciOiJIUzI1NiJ9.eyJpc3MiOiJodHRwczovL2F1dGguZXhhbXBsZS5jb20iLCJzdWIiOiJhbGljZSIsImF1ZCI6ImJpbGxpbmdfYXBpIiwiZXhwIjoxNTYyMjY2MjE2LCJpYXQiOjE1NjIyNjI2MTYsImFjdCI6eyJzdWIiOiJwYXltZW50X2FwaSJ9fQ.mock_sig",
+          "header": {
+            "typ": "at+jwt",
+            "alg": "HS256"
+          },
+          "payload": {
+            "iss": "https://auth.example.com",
+            "sub": "alice",
+            "aud": "billing_api",
+            "exp": 1562266216,
+            "iat": 1562262616,
+            "act": {
+              "sub": "payment_api"
+            }
+          },
+          "signature_b64": "mock_sig"
+        }
+      ],
+      "explanation": "The Payment API needs to call the downstream Billing API, but its current token is scoped to 'payment_api'. It uses Token Exchange to trade the user's token for a new one scoped to 'billing_api'.",
+      "annotations": [
+        "The 'grant_type' is set to 'urn:ietf:params:oauth:grant-type:token-exchange'.",
+        "The original token is passed as the 'subject_token'.",
+        "The Payment API authenticates itself to the Authz Server (e.g., using HTTP Basic auth).",
+        "The newly issued token retains the original user ('alice') in the 'sub' claim.",
+        "Crucially, the new token includes an 'act' (actor) claim identifying that the 'payment_api' is acting on the user's behalf. This provides an audit trail for the delegation."
+      ],
+      "is_response": true
+    },
+    {
+      "step": 3,
+      "from": "api-gateway",
+      "to": "backend",
+      "label": "POST /invoice",
+      "method": "POST",
+      "url": "https://billing.example.com/invoice",
+      "request_headers": {
+        "Authorization": "Bearer eyJ0eXAiOiJhdCtqd3QiLCJhbGciOiJIUzI1NiJ9...",
+        "Content-Type": "application/json"
+      },
+      "request_body": {
+        "cart_id": "12345"
+      },
+      "response_status": 200,
+      "response_headers": {},
+      "artifacts": [],
+      "tokens": [
+        {
+          "name": "Delegated Token",
+          "typ": "at+jwt",
+          "raw": "eyJ0eXAiOiJhdCtqd3QiLCJhbGciOiJIUzI1NiJ9.eyJpc3MiOiJodHRwczovL2F1dGguZXhhbXBsZS5jb20iLCJzdWIiOiJhbGljZSIsImF1ZCI6ImJpbGxpbmdfYXBpIiwiZXhwIjoxNTYyMjY2MjE2LCJpYXQiOjE1NjIyNjI2MTYsImFjdCI6eyJzdWIiOiJwYXltZW50X2FwaSJ9fQ.mock_sig",
+          "header": {
+            "typ": "at+jwt",
+            "alg": "HS256"
+          },
+          "payload": {
+            "iss": "https://auth.example.com",
+            "sub": "alice",
+            "aud": "billing_api",
+            "exp": 1562266216,
+            "iat": 1562262616,
+            "act": {
+              "sub": "payment_api"
+            }
+          },
+          "signature_b64": "mock_sig"
+        }
+      ],
+      "explanation": "The Payment API calls the downstream Billing API using the new Delegated Token.",
+      "annotations": [
+        "The Billing API verifies the token. It sees that the 'sub' is 'alice' (so it knows whose account to bill).",
+        "It also sees the 'act' claim is 'payment_api', allowing it to enforce policies like 'Only the Payment API is allowed to create invoices on behalf of users'."
+      ]
+    },
+    {
+      "step": 4,
+      "from": "backend",
+      "to": "authz",
+      "label": "POST /token (Nested Exchange)",
+      "method": "POST",
+      "url": "https://auth.example.com/token",
+      "request_headers": {
+        "Content-Type": "application/x-www-form-urlencoded",
+        "Authorization": "Basic YmlsbGluZ19hcGk6c2VjcmV0"
+      },
+      "request_body": "grant_type=urn:ietf:params:oauth:grant-type:token-exchange&subject_token=eyJ0eXAiOiJhdCtqd3QiLCJhbGciOiJIUzI1NiJ9...&subject_token_type=urn:ietf:params:oauth:token-type:access_token&audience=ledger_api",
+      "response_status": 200,
+      "response_headers": {
+        "Content-Type": "application/json"
+      },
+      "response_body": {
+        "access_token": "eyJ0eXAiOiJhdCtqd3QiLCJhbGciOiJIUzI1NiJ9..._nested",
+        "issued_token_type": "urn:ietf:params:oauth:token-type:access_token",
+        "token_type": "Bearer",
+        "expires_in": 3600
+      },
+      "artifacts": [],
+      "tokens": [
+        {
+          "name": "Nested Delegated Token (Billing → Ledger)",
+          "typ": "at+jwt",
+          "raw": "eyJ0eXAiOiJhdCtqd3QiLCJhbGciOiJIUzI1NiJ9.eyJpc3MiOiJodHRwczovL2F1dGguZXhhbXBsZS5jb20iLCJzdWIiOiJhbGljZSIsImF1ZCI6ImxlZGdlcl9hcGkiLCJleHAiOjE1NjIyNjYyMTYsImlhdCI6MTU2MjI2MjYxNiwiYWN0Ijp7InN1YiI6ImJpbGxpbmdfYXBpIiwiYWN0Ijp7InN1YiI6InBheW1lbnRfYXBpIn19fQ.mock_sig_nested",
+          "header": {
+            "typ": "at+jwt",
+            "alg": "HS256"
+          },
+          "payload": {
+            "iss": "https://auth.example.com",
+            "sub": "alice",
+            "aud": "ledger_api",
+            "exp": 1562266216,
+            "iat": 1562262616,
+            "act": {
+              "sub": "billing_api",
+              "act": {
+                "sub": "payment_api"
+              }
+            }
+          },
+          "signature_b64": "mock_sig_nested"
+        }
+      ],
+      "explanation": "If the Billing API needs to call a 3rd service (e.g., a Ledger API), it performs another token exchange. The Authz Server nests the 'act' claims to preserve the entire chain of custody.",
+      "annotations": [
+        "Notice the nested 'act' claim in the newly issued token. It shows that 'billing_api' is acting on behalf of 'payment_api', which in turn is acting on behalf of the user.",
+        "RFC 8693 §4.1 states that nesting 'act' claims provides a clear audit trail of the delegation chain."
+      ],
+      "is_response": true
+    }
+  ]
+}

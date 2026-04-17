@@ -1,0 +1,141 @@
+{
+  "id": "oauth2-token-exchange-impersonation",
+  "title": "Token Exchange — Impersonation",
+  "description": "Demonstrating RFC 8693 Token Exchange for impersonation. An admin with a 'may_act' privilege exchanges their token for a clean token belonging to a target user.",
+  "rfc": "RFC 8693",
+  "category": "OAuth 2.0",
+  "participants": [
+    {
+      "id": "admin-app",
+      "label": "Admin Portal",
+      "type": "client"
+    },
+    {
+      "id": "authz",
+      "label": "Authz Server",
+      "type": "idp"
+    },
+    {
+      "id": "resource",
+      "label": "Resource Server",
+      "type": "server"
+    }
+  ],
+  "steps": [
+    {
+      "step": 1,
+      "from": "admin-app",
+      "to": "authz",
+      "label": "POST /token (Exchange)",
+      "method": "POST",
+      "url": "https://auth.example.com/token",
+      "request_headers": {
+        "Content-Type": "application/x-www-form-urlencoded"
+      },
+      "request_body": "grant_type=urn:ietf:params:oauth:grant-type:token-exchange&subject_token=bob&subject_token_type=urn:ietf:params:oauth:token-type:jwt&actor_token=eyJ0eXAiOiJhdCtqd3QiLCJhbGciOiJIUzI1NiJ9...&actor_token_type=urn:ietf:params:oauth:token-type:access_token&audience=api",
+      "response_status": 200,
+      "response_headers": {
+        "Content-Type": "application/json"
+      },
+      "response_body": {
+        "access_token": "eyJ0eXAiOiJhdCtqd3QiLCJhbGciOiJIUzI1NiJ9..._impersonated",
+        "issued_token_type": "urn:ietf:params:oauth:token-type:access_token",
+        "token_type": "Bearer",
+        "expires_in": 3600
+      },
+      "artifacts": [],
+      "tokens": [
+        {
+          "name": "Actor Token (Admin's Token)",
+          "typ": "at+jwt",
+          "raw": "eyJ0eXAiOiJhdCtqd3QiLCJhbGciOiJIUzI1NiJ9.eyJpc3MiOiJodHRwczovL2F1dGguZXhhbXBsZS5jb20iLCJzdWIiOiJhZG1pbl9jaGFybGllIiwiYXVkIjoiYWRtaW5fcG9ydGFsIiwiZXhwIjoxNTYyMjY2MjE2LCJpYXQiOjE1NjIyNjI2MTYsIm1heV9hY3QiOnsic3ViIjoiYm9iIn19.mock_sig_admin",
+          "header": {
+            "typ": "at+jwt",
+            "alg": "HS256"
+          },
+          "payload": {
+            "iss": "https://auth.example.com",
+            "sub": "admin_charlie",
+            "aud": "admin_portal",
+            "exp": 1562266216,
+            "iat": 1562262616,
+            "may_act": {
+              "sub": "bob"
+            }
+          },
+          "signature_b64": "mock_sig_admin"
+        },
+        {
+          "name": "Impersonated Token",
+          "typ": "at+jwt",
+          "raw": "eyJ0eXAiOiJhdCtqd3QiLCJhbGciOiJIUzI1NiJ9.eyJpc3MiOiJodHRwczovL2F1dGguZXhhbXBsZS5jb20iLCJzdWIiOiJib2IiLCJhdWQiOiJhcGkiLCJleHAiOjE1NjIyNjYyMTYsImlhdCI6MTU2MjI2MjYxNn0.mock_sig_impersonated",
+          "header": {
+            "typ": "at+jwt",
+            "alg": "HS256"
+          },
+          "payload": {
+            "iss": "https://auth.example.com",
+            "sub": "bob",
+            "aud": "api",
+            "exp": 1562266216,
+            "iat": 1562262616
+          },
+          "signature_b64": "mock_sig_impersonated"
+        }
+      ],
+      "explanation": "An administrator ('charlie') wants to impersonate a user ('bob') to troubleshoot an issue. Charlie sends a Token Exchange request to the Authz Server. The request includes Charlie's token as the 'actor_token', and specifies 'bob' as the 'subject_token'.",
+      "annotations": [
+        "In impersonation, the 'subject_token' does not have to be an actual token; it can be an identifier (like a username) if the Authz Server supports it.",
+        "Charlie's 'actor_token' contains a 'may_act' claim. The Authz Server verifies this claim to ensure Charlie actually has permission to impersonate Bob.",
+        "Unlike delegation, the newly issued token has NO 'act' claim. It is indistinguishable from a token Bob acquired himself."
+      ],
+      "is_response": true
+    },
+    {
+      "step": 2,
+      "from": "admin-app",
+      "to": "resource",
+      "label": "GET /profile",
+      "method": "GET",
+      "url": "https://api.example.com/profile",
+      "request_headers": {
+        "Authorization": "Bearer eyJ0eXAiOiJhdCtqd3QiLCJhbGciOiJIUzI1NiJ9..._impersonated"
+      },
+      "request_body": null,
+      "response_status": 200,
+      "response_headers": {
+        "Content-Type": "application/json"
+      },
+      "response_body": {
+        "name": "Bob",
+        "email": "bob@example.com",
+        "status": "Active"
+      },
+      "artifacts": [],
+      "tokens": [
+        {
+          "name": "Impersonated Token",
+          "typ": "at+jwt",
+          "raw": "eyJ0eXAiOiJhdCtqd3QiLCJhbGciOiJIUzI1NiJ9.eyJpc3MiOiJodHRwczovL2F1dGguZXhhbXBsZS5jb20iLCJzdWIiOiJib2IiLCJhdWQiOiJhcGkiLCJleHAiOjE1NjIyNjYyMTYsImlhdCI6MTU2MjI2MjYxNn0.mock_sig_impersonated",
+          "header": {
+            "typ": "at+jwt",
+            "alg": "HS256"
+          },
+          "payload": {
+            "iss": "https://auth.example.com",
+            "sub": "bob",
+            "aud": "api",
+            "exp": 1562266216,
+            "iat": 1562262616
+          },
+          "signature_b64": "mock_sig_impersonated"
+        }
+      ],
+      "explanation": "The Admin Portal calls the Resource Server API using the Impersonated Token.",
+      "annotations": [
+        "The Resource Server processes the request exactly as if Bob made it, since the token's 'sub' claim is 'bob' and there are no delegation claims present.",
+        "This is the core difference between Delegation and Impersonation in RFC 8693."
+      ]
+    }
+  ]
+}
