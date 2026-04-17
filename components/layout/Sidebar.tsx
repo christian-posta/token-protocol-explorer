@@ -25,6 +25,13 @@ const NAV: NavSection[] = [
       { label: "Happy Path (3-legged flow)", href: "/oauth1a/happy-path" },
     ],
   },
+  {
+    title: "AWS SigV4",
+    color: "text-amber-400",
+    items: [
+      { label: "API Request", href: "/aws-sigv4/api-request" },
+    ],
+  },
 ];
 
 function SidebarSection({ section, defaultOpen }: { section: NavSection; defaultOpen: boolean }) {

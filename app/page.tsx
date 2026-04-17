@@ -15,6 +15,19 @@ const PROTOCOLS = [
       { label: "Happy Path (3-legged flow)", href: "/oauth1a/happy-path" },
     ],
   },
+  {
+    id: "aws-sigv4",
+    name: "AWS SigV4",
+    rfc: "AWS Docs",
+    rfcUrl: "https://docs.aws.amazon.com/IAM/latest/UserGuide/reference_aws-signing.html",
+    accent: "border-amber-500/35 hover:border-amber-500/55",
+    iconWrap: "bg-amber-500/15 text-amber-400",
+    description:
+      "AWS Signature Version 4 protocol for authenticating API requests. Features a 4-step signing process deriving a scope-limited signing key from the AWS secret access key.",
+    scenarios: [
+      { label: "API Request (STS)", href: "/aws-sigv4/api-request" },
+    ],
+  },
 ];
 
 export default function HomePage() {

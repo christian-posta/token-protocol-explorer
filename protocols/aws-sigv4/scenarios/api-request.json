@@ -1,0 +1,74 @@
+{
+  "id": "aws-sigv4-api-request",
+  "title": "AWS SigV4 — API Request",
+  "description": "Authenticating an AWS API request using Signature Version 4. This scenario shows an STS GetCallerIdentity call, detailing the 4-step signing process.",
+  "rfc": "AWS Docs",
+  "category": "AWS SigV4",
+  "participants": [
+    {
+      "id": "client",
+      "label": "Client Application",
+      "type": "client"
+    },
+    {
+      "id": "sts",
+      "label": "AWS STS",
+      "type": "server"
+    }
+  ],
+  "steps": [
+    {
+      "step": 1,
+      "from": "client",
+      "to": "sts",
+      "label": "POST /",
+      "method": "POST",
+      "url": "https://sts.us-east-1.amazonaws.com/",
+      "request_headers": {
+        "Content-Type": "application/x-www-form-urlencoded",
+        "Host": "sts.us-east-1.amazonaws.com",
+        "X-Amz-Date": "20260417T120000Z",
+        "Authorization": "AWS4-HMAC-SHA256 Credential=AKIAIOSFODNN7EXAMPLE/20260417/us-east-1/sts/aws4_request, SignedHeaders=content-type;host;x-amz-date, Signature=be7148d34ebccdc6423b19085378aa0cb971d4dd1cb465a3962d3a3c9e37d5cb"
+      },
+      "request_body": "Action=GetCallerIdentity&Version=2011-06-15",
+      "response_status": 200,
+      "response_headers": {
+        "Content-Type": "text/xml"
+      },
+      "response_body": "<GetCallerIdentityResponse xmlns=\"https://sts.amazonaws.com/doc/2011-06-15/\">\n  <GetCallerIdentityResult>\n    <Arn>arn:aws:iam::123456789012:user/Alice</Arn>\n    <UserId>AIDAJQABLZS4A3QDU576Q</UserId>\n    <Account>123456789012</Account>\n  </GetCallerIdentityResult>\n  <ResponseMetadata>\n    <RequestId>01234567-89ab-cdef-0123-456789abcdef</RequestId>\n  </ResponseMetadata>\n</GetCallerIdentityResponse>",
+      "artifacts": [
+        {
+          "type": "hmac-sha256",
+          "raw_input": "AWS4-HMAC-SHA256\n20260417T120000Z\n20260417/us-east-1/sts/aws4_request\n3511de7e05fc43d274dc597ffc640e0ec0fbcf26630f9a2e9b11110debd4dfd0",
+          "signing_key_hint": "Derived key (Date → Region → Service → aws4_request)",
+          "final_output": "be7148d34ebccdc6423b19085378aa0cb971d4dd1cb465a3962d3a3c9e37d5cb",
+          "steps": [
+            {
+              "label": "1. Create Canonical Request",
+              "value": "POST\n/\n\ncontent-type:application/x-www-form-urlencoded\nhost:sts.us-east-1.amazonaws.com\nx-amz-date:20260417T120000Z\n\ncontent-type;host;x-amz-date\ne3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+            },
+            {
+              "label": "2. Create String to Sign",
+              "value": "AWS4-HMAC-SHA256\n20260417T120000Z\n20260417/us-east-1/sts/aws4_request\n3511de7e05fc43d274dc597ffc640e0ec0fbcf26630f9a2e9b11110debd4dfd0"
+            },
+            {
+              "label": "3. Calculate Signature (Derive Key)",
+              "value": "kDate = HMAC(\"AWS4\" + wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY, \"20260417\")\nkRegion = HMAC(kDate, \"us-east-1\")\nkService = HMAC(kRegion, \"sts\")\nkSigning = HMAC(kService, \"aws4_request\")\n\nSignature = HexEncode(HMAC(kSigning, StringToSign))"
+            },
+            {
+              "label": "4. Build Authorization Header",
+              "value": "AWS4-HMAC-SHA256 Credential=AKIAIOSFODNN7EXAMPLE/20260417/us-east-1/sts/aws4_request, SignedHeaders=content-type;host;x-amz-date, Signature=be7148d34ebccdc6423b19085378aa0cb971d4dd1cb465a3962d3a3c9e37d5cb"
+            }
+          ]
+        }
+      ],
+      "tokens": [],
+      "explanation": "The client sends a signed request to AWS STS. AWS SigV4 requires calculating a canonical request hash, building a string to sign, deriving a daily scoped signing key from the secret access key, and generating an HMAC-SHA256 signature.",
+      "annotations": [
+        "The canonical request includes the HTTP method, URI, query string, headers, signed header names, and a SHA256 hash of the payload.",
+        "The signing key is derived hierarchically: Secret Key → Date → Region → Service → 'aws4_request'. This scopes the key so a leaked derived key is only valid for one service in one region for one day.",
+        "The X-Amz-Date header must be within 5 minutes of the server clock to prevent replay attacks."
+      ]
+    }
+  ]
+}
