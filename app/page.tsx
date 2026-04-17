@@ -43,6 +43,20 @@ const PROTOCOLS = [
       { label: "Token Exchange: Impersonation", href: "/oauth2/token-exchange-impersonation" },
     ],
   },
+  {
+    id: "http-signatures",
+    name: "HTTP Signatures",
+    rfc: "RFC 9421",
+    rfcUrl: "https://www.rfc-editor.org/rfc/rfc9421.txt",
+    accent: "border-teal-500/35 hover:border-teal-500/55",
+    iconWrap: "bg-teal-500/15 text-teal-400",
+    description:
+      "A powerful mechanism for creating and verifying digital signatures over HTTP messages, protecting integrity and authenticity of headers and payloads.",
+    scenarios: [
+      { label: "Basic Signature", href: "/http-signatures/rfc9421" },
+      { label: "Signature-Key Header (Draft)", href: "/http-signatures/signature-key-schemes" },
+    ],
+  },
 ];
 
 export default function HomePage() {

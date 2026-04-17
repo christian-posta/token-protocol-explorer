@@ -1,0 +1,185 @@
+{
+  "id": "http-signatures-signature-key-schemes",
+  "title": "Signature-Key Header Schemes",
+  "description": "Exploring the four key distribution schemes defined in draft-hardt-httpbis-signature-key. The Signature-Key header embeds or links to the public key required to verify the RFC 9421 signature.",
+  "rfc": "Draft (Signature-Key)",
+  "category": "HTTP Signatures",
+  "participants": [
+    {
+      "id": "client",
+      "label": "Client",
+      "type": "client"
+    },
+    {
+      "id": "server",
+      "label": "API Server",
+      "type": "server"
+    }
+  ],
+  "steps": [
+    {
+      "step": 1,
+      "from": "client",
+      "to": "server",
+      "label": "1. Inline Key (hwk)",
+      "method": "POST",
+      "url": "https://api.example.com/hwk-auth",
+      "request_headers": {
+        "Signature-Input": "sig1=(\"@method\" \"@path\" \"signature-key\");created=1776677400",
+        "Signature": "sig1=:hwk_signature_bytes=:",
+        "Signature-Key": "sig1=hwk;kty=\"OKP\";crv=\"Ed25519\";x=\"11qYAYKxCrfVS_7TyWQHOg7hcvPapiMlrwIaaPPr9m4\""
+      },
+      "request_body": null,
+      "response_status": 204,
+      "response_headers": {},
+      "artifacts": [
+        {
+          "type": "custom",
+          "raw_input": "\"@method\": POST\n\"@path\": /hwk-auth\n\"signature-key\": sig1=hwk;kty=\"OKP\";crv=\"Ed25519\";x=\"11qYAYKxCrfVS_7TyWQHOg7hcvPapiMlrwIaaPPr9m4\"\n\"@signature-params\": (\"@method\" \"@path\" \"signature-key\");created=1776677400",
+          "signing_key_hint": "Ed25519 Private Key",
+          "final_output": "hwk_signature_bytes",
+          "steps": [
+            {
+              "label": "1. Base String (Notice signature-key is covered)",
+              "value": "\"@method\": POST\n\"@path\": /hwk-auth\n\"signature-key\": sig1=hwk;kty=\"OKP\";crv=\"Ed25519\";x=\"11qYAYKxCrfVS_7TyWQHOg7hcvPapiMlrwIaaPPr9m4\"\n\"@signature-params\": (\"@method\" \"@path\" \"signature-key\");created=1776677400"
+            }
+          ]
+        }
+      ],
+      "tokens": [],
+      "explanation": "Scheme 1: 'hwk' (Header Web Key). The client includes the raw public key inline within the Signature-Key header using JWK formatting parameters.",
+      "annotations": [
+        "This scheme provides pseudonymous authentication. The server doesn't know WHO the client is, only that they possess the private key matching the inline public key.",
+        "CRITICAL: The 'Signature-Input' explicitly lists 'signature-key' as a covered header. If the signature doesn't cover the key header, an attacker could trivially swap out the public key and signature in transit."
+      ]
+    },
+    {
+      "step": 2,
+      "from": "client",
+      "to": "server",
+      "label": "2. Discovery (jwks_uri)",
+      "method": "POST",
+      "url": "https://api.example.com/jwks-auth",
+      "request_headers": {
+        "Signature-Input": "sig1=(\"@method\" \"@path\" \"signature-key\");created=1776677400",
+        "Signature": "sig1=:jwks_signature_bytes=:",
+        "Signature-Key": "sig1=jwks_uri;uri=\"https://client.example.com/.well-known/jwks.json\";kid=\"key-2026\""
+      },
+      "request_body": null,
+      "response_status": 204,
+      "response_headers": {},
+      "artifacts": [
+        {
+          "type": "custom",
+          "raw_input": "\"@method\": POST\n\"@path\": /jwks-auth\n\"signature-key\": sig1=jwks_uri;uri=\"https://client.example.com/.well-known/jwks.json\";kid=\"key-2026\"\n\"@signature-params\": (\"@method\" \"@path\" \"signature-key\");created=1776677400",
+          "signing_key_hint": "Private Key matching kid 'key-2026'",
+          "final_output": "jwks_signature_bytes",
+          "steps": [
+            {
+              "label": "1. Base String",
+              "value": "\"@method\": POST\n\"@path\": /jwks-auth\n\"signature-key\": sig1=jwks_uri;uri=\"https://client.example.com/.well-known/jwks.json\";kid=\"key-2026\"\n\"@signature-params\": (\"@method\" \"@path\" \"signature-key\");created=1776677400"
+            }
+          ]
+        }
+      ],
+      "tokens": [],
+      "explanation": "Scheme 2: 'jwks_uri'. The client points the server to a JSON Web Key Set (JWKS) URL where the public key can be dynamically fetched.",
+      "annotations": [
+        "This scheme provides identified authentication. The trust is placed in the domain hosting the JWKS URI (e.g., client.example.com).",
+        "The server must perform an HTTP GET to the URI, find the key matching the 'kid' parameter, and use it to verify the signature."
+      ]
+    },
+    {
+      "step": 3,
+      "from": "client",
+      "to": "server",
+      "label": "3. Certificate (x509)",
+      "method": "POST",
+      "url": "https://api.example.com/x509-auth",
+      "request_headers": {
+        "Signature-Input": "sig1=(\"@method\" \"@path\" \"signature-key\");created=1776677400",
+        "Signature": "sig1=:x509_signature_bytes=:",
+        "Signature-Key": "sig1=x509;chain=(\"MIIB...\" \"MIIC...\")"
+      },
+      "request_body": null,
+      "response_status": 204,
+      "response_headers": {},
+      "artifacts": [
+        {
+          "type": "custom",
+          "raw_input": "\"@method\": POST\n\"@path\": /x509-auth\n\"signature-key\": sig1=x509;chain=(\"MIIB...\" \"MIIC...\")\n\"@signature-params\": (\"@method\" \"@path\" \"signature-key\");created=1776677400",
+          "signing_key_hint": "Private Key corresponding to the X.509 cert",
+          "final_output": "x509_signature_bytes",
+          "steps": [
+            {
+              "label": "1. Base String",
+              "value": "\"@method\": POST\n\"@path\": /x509-auth\n\"signature-key\": sig1=x509;chain=(\"MIIB...\" \"MIIC...\")\n\"@signature-params\": (\"@method\" \"@path\" \"signature-key\");created=1776677400"
+            }
+          ]
+        }
+      ],
+      "tokens": [],
+      "explanation": "Scheme 3: 'x509'. The client embeds a complete X.509 certificate chain directly in the header.",
+      "annotations": [
+        "This integrates HTTP Signatures with traditional Public Key Infrastructure (PKI) trust models.",
+        "The server extracts the leaf certificate, verifies the chain up to a trusted root CA, and then extracts the public key from the leaf to verify the HTTP signature."
+      ]
+    },
+    {
+      "step": 4,
+      "from": "client",
+      "to": "server",
+      "label": "4. Delegated Key (jwt)",
+      "method": "POST",
+      "url": "https://api.example.com/jwt-auth",
+      "request_headers": {
+        "Signature-Input": "sig1=(\"@method\" \"@path\" \"signature-key\");created=1776677400",
+        "Signature": "sig1=:jwt_signature_bytes=:",
+        "Signature-Key": "sig1=jwt;jwt=\"eyJ0eXAiOiJqd3QiLCJhbGciOiJIUzI1NiJ9.eyJpc3MiOiJhdXRob3JpdHkiLCJjbmYiOnsiandrIjp7Imt0eSI6IkVDIiwieCI6ImFicyJ9fX0.mock_sig\""
+      },
+      "request_body": null,
+      "response_status": 204,
+      "response_headers": {},
+      "artifacts": [
+        {
+          "type": "custom",
+          "raw_input": "\"@method\": POST\n\"@path\": /jwt-auth\n\"signature-key\": sig1=jwt;jwt=\"eyJ0eXAiOiJqd3QiLCJhbGciOiJIUzI1NiJ9.eyJpc3MiOiJhdXRob3JpdHkiLCJjbmYiOnsiandrIjp7Imt0eSI6IkVDIiwieCI6ImFicyJ9fX0.mock_sig\"\n\"@signature-params\": (\"@method\" \"@path\" \"signature-key\");created=1776677400",
+          "signing_key_hint": "Delegated Private Key",
+          "final_output": "jwt_signature_bytes",
+          "steps": [
+            {
+              "label": "1. Base String",
+              "value": "\"@method\": POST\n\"@path\": /jwt-auth\n\"signature-key\": sig1=jwt;jwt=\"eyJ0eXAiOiJqd3QiLCJhbGciOiJIUzI1NiJ9.eyJpc3MiOiJhdXRob3JpdHkiLCJjbmYiOnsiandrIjp7Imt0eSI6IkVDIiwieCI6ImFicyJ9fX0.mock_sig\"\n\"@signature-params\": (\"@method\" \"@path\" \"signature-key\");created=1776677400"
+            }
+          ]
+        }
+      ],
+      "tokens": [
+        {
+          "name": "Key Attestation JWT",
+          "typ": "jwt",
+          "raw": "eyJ0eXAiOiJqd3QiLCJhbGciOiJIUzI1NiJ9.eyJpc3MiOiJhdXRob3JpdHkiLCJjbmYiOnsiandrIjp7Imt0eSI6IkVDIiwieCI6ImFicyJ9fX0.mock_sig",
+          "header": {
+            "typ": "jwt",
+            "alg": "HS256"
+          },
+          "payload": {
+            "iss": "authority",
+            "cnf": {
+              "jwk": {
+                "kty": "EC",
+                "x": "abs"
+              }
+            }
+          },
+          "signature_b64": "mock_sig"
+        }
+      ],
+      "explanation": "Scheme 4: 'jwt'. The client provides a signed JWT that contains the public key within its 'cnf' (confirmation) claim.",
+      "annotations": [
+        "This scheme provides delegated trust. An authority (like an Authz Server) signs a JWT asserting that a specific public key belongs to a specific client.",
+        "The API server validates the JWT signature using the authority's key, extracts the 'cnf' public key, and uses THAT key to verify the HTTP Message Signature."
+      ]
+    }
+  ]
+}

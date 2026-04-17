@@ -41,6 +41,14 @@ const NAV: NavSection[] = [
       { label: "Token Exchange: Impersonation", href: "/oauth2/token-exchange-impersonation" },
     ],
   },
+  {
+    title: "HTTP Signatures",
+    color: "text-teal-400",
+    items: [
+      { label: "RFC 9421 (Basic)", href: "/http-signatures/rfc9421" },
+      { label: "Signature-Key Schemes", href: "/http-signatures/signature-key-schemes" },
+    ],
+  },
 ];
 
 function SidebarSection({ section, defaultOpen }: { section: NavSection; defaultOpen: boolean }) {

@@ -1,0 +1,73 @@
+{
+  "id": "http-signatures-rfc9421",
+  "title": "HTTP Message Signatures",
+  "description": "Demonstrating the core RFC 9421 specification. Shows how the Signature Base String is constructed using headers, pseudo-headers, and the strict newline-delimited dictionary format.",
+  "rfc": "RFC 9421",
+  "category": "HTTP Signatures",
+  "participants": [
+    {
+      "id": "client",
+      "label": "Client",
+      "type": "client"
+    },
+    {
+      "id": "server",
+      "label": "API Server",
+      "type": "server"
+    }
+  ],
+  "steps": [
+    {
+      "step": 1,
+      "from": "client",
+      "to": "server",
+      "label": "POST /transactions",
+      "method": "POST",
+      "url": "https://api.example.com/transactions",
+      "request_headers": {
+        "Host": "api.example.com",
+        "Date": "Tue, 20 Apr 2026 09:30:00 GMT",
+        "Content-Type": "application/json",
+        "Content-Digest": "sha-256=:X48E9qOokqqrvdts8nOJRJN3OWDUoyWxBf7kbu9DBPE=:",
+        "Signature-Input": "sig1=(\"@method\" \"@path\" \"@authority\" \"content-type\" \"content-digest\");created=1776677400;keyid=\"test-key-rsa\"",
+        "Signature": "sig1=:base64SignatureBytesHere...=:"
+      },
+      "request_body": {
+        "amount": 100,
+        "currency": "USD"
+      },
+      "response_status": 202,
+      "response_headers": {},
+      "artifacts": [
+        {
+          "type": "rsa-sha256",
+          "raw_input": "\"@method\": POST\n\"@path\": /transactions\n\"@authority\": api.example.com\n\"content-type\": application/json\n\"content-digest\": sha-256=:X48E9qOokqqrvdts8nOJRJN3OWDUoyWxBf7kbu9DBPE=:\n\"@signature-params\": (\"@method\" \"@path\" \"@authority\" \"content-type\" \"content-digest\");created=1776677400;keyid=\"test-key-rsa\"",
+          "signing_key_hint": "Client's RSA Private Key (out-of-band 'test-key-rsa')",
+          "final_output": "base64SignatureBytesHere...=",
+          "steps": [
+            {
+              "label": "1. Build Signature Base String",
+              "value": "\"@method\": POST\n\"@path\": /transactions\n\"@authority\": api.example.com\n\"content-type\": application/json\n\"content-digest\": sha-256=:X48E9qOokqqrvdts8nOJRJN3OWDUoyWxBf7kbu9DBPE=:\n\"@signature-params\": (\"@method\" \"@path\" \"@authority\" \"content-type\" \"content-digest\");created=1776677400;keyid=\"test-key-rsa\""
+            },
+            {
+              "label": "2. Sign using RSASSA-PSS",
+              "value": "RSASSA-PSS-SHA256(BaseString, PrivateKey) → RawBytes"
+            },
+            {
+              "label": "3. Format as HTTP Dictionary",
+              "value": "sig1=:base64(RawBytes):"
+            }
+          ]
+        }
+      ],
+      "tokens": [],
+      "explanation": "The client signs an HTTP request using RFC 9421. The signature covers the HTTP method, the path, the host authority, and the content digest of the JSON body.",
+      "annotations": [
+        "RFC 9421 introduces 'pseudo-headers' like @method and @path to allow signing parts of the HTTP request line.",
+        "The Signature Base String is strictly formatted. Each component is lowercased, wrapped in quotes, followed by a colon and a space, and then the value. Components are separated by newlines.",
+        "The final line of the Base String is ALWAYS '@signature-params', which exactly matches the configuration defined in the Signature-Input header.",
+        "In this scenario, the server must already know the public key associated with keyid='test-key-rsa' (out-of-band key distribution)."
+      ]
+    }
+  ]
+}
