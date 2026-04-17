@@ -72,6 +72,19 @@ const PROTOCOLS = [
     ],
   },
   {
+    id: "mcp-auth",
+    name: "MCP Authorization",
+    rfc: "MCP Auth Draft",
+    rfcUrl: "https://modelcontextprotocol.io/",
+    accent: "border-purple-500/35 hover:border-purple-500/55",
+    iconWrap: "bg-purple-500/15 text-purple-400",
+    description:
+      "The Model Context Protocol Authorization flow utilizing OAuth 2.1, PKCE, and Protected Resource Metadata for secure client-server communication.",
+    scenarios: [
+      { label: "Auth Code + PKCE", href: "/mcp-auth/authorization-code-pkce" },
+    ],
+  },
+  {
     id: "aauth",
     name: "AAuth",
     rfc: "aauth.dev",

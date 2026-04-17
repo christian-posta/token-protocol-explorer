@@ -59,6 +59,13 @@ const NAV: NavSection[] = [
     ],
   },
   {
+    title: "MCP Auth",
+    color: "text-purple-400",
+    items: [
+      { label: "Auth Code + PKCE", href: "/mcp-auth/authorization-code-pkce" },
+    ],
+  },
+  {
     title: "AAuth",
     color: "text-rose-400",
     items: [

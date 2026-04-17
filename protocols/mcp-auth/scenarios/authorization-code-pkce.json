@@ -1,0 +1,282 @@
+{
+  "id": "mcp-auth-authorization-code-pkce",
+  "title": "MCP Auth — Authorization Code with PKCE",
+  "description": "The Model Context Protocol Authorization flow utilizing OAuth 2.1, PKCE, and Protected Resource Metadata for secure client-server communication.",
+  "rfc": "MCP Auth Draft",
+  "category": "MCP Authorization",
+  "participants": [
+    {
+      "id": "client",
+      "label": "MCP Client",
+      "type": "client"
+    },
+    {
+      "id": "user",
+      "label": "User / Browser",
+      "type": "user"
+    },
+    {
+      "id": "mcp-server",
+      "label": "MCP Server",
+      "type": "server"
+    },
+    {
+      "id": "authz",
+      "label": "Auth Server",
+      "type": "idp"
+    }
+  ],
+  "steps": [
+    {
+      "step": 1,
+      "from": "client",
+      "to": "mcp-server",
+      "label": "POST /mcp",
+      "method": "POST",
+      "url": "https://api.example.com/mcp",
+      "request_headers": {
+        "Content-Type": "application/json"
+      },
+      "request_body": {
+        "jsonrpc": "2.0",
+        "method": "initialize",
+        "params": {}
+      },
+      "response_status": 401,
+      "response_headers": {
+        "WWW-Authenticate": "Bearer resource_metadata=\"https://api.example.com/.well-known/oauth-protected-resource\""
+      },
+      "response_body": {
+        "error": "Unauthorized"
+      },
+      "artifacts": [],
+      "tokens": [],
+      "explanation": "The MCP Client attempts an unauthenticated request to the MCP Server. The server rejects it, providing the location of its Protected Resource Metadata.",
+      "annotations": [
+        "The server returns a 401 Unauthorized status.",
+        "The WWW-Authenticate header directs the client to the metadata endpoint."
+      ],
+      "is_response": false
+    },
+    {
+      "step": 2,
+      "from": "client",
+      "to": "mcp-server",
+      "label": "GET Resource Metadata",
+      "method": "GET",
+      "url": "https://api.example.com/.well-known/oauth-protected-resource",
+      "request_headers": {},
+      "request_body": null,
+      "response_status": 200,
+      "response_headers": {
+        "Content-Type": "application/json"
+      },
+      "response_body": {
+        "resource": "https://api.example.com",
+        "authorization_servers": [
+          "https://auth.example.com"
+        ]
+      },
+      "artifacts": [],
+      "tokens": [],
+      "explanation": "The client fetches the Protected Resource Metadata to discover the appropriate Authorization Server that can issue tokens for this MCP Server.",
+      "annotations": [
+        "This follows the OAuth 2.0 Protected Resource Metadata specification."
+      ],
+      "is_response": false
+    },
+    {
+      "step": 3,
+      "from": "client",
+      "to": "authz",
+      "label": "GET Auth Metadata",
+      "method": "GET",
+      "url": "https://auth.example.com/.well-known/oauth-authorization-server",
+      "request_headers": {},
+      "request_body": null,
+      "response_status": 200,
+      "response_headers": {
+        "Content-Type": "application/json"
+      },
+      "response_body": {
+        "issuer": "https://auth.example.com",
+        "authorization_endpoint": "https://auth.example.com/authorize",
+        "token_endpoint": "https://auth.example.com/token"
+      },
+      "artifacts": [],
+      "tokens": [],
+      "explanation": "The client queries the discovered Authorization Server's metadata to find the authorization and token endpoints.",
+      "annotations": [],
+      "is_response": false
+    },
+    {
+      "step": 4,
+      "from": "client",
+      "to": "user",
+      "label": "Redirect → /authorize",
+      "method": "GET",
+      "url": "https://auth.example.com/authorize?response_type=code&client_id=mcp-app&redirect_uri=http://localhost:8080/callback&code_challenge=xyz789&code_challenge_method=S256&resource=https://api.example.com",
+      "request_headers": {},
+      "request_body": null,
+      "response_status": 302,
+      "response_headers": {
+        "Location": "https://auth.example.com/authorize?..."
+      },
+      "response_body": null,
+      "artifacts": [
+        {
+          "type": "custom",
+          "raw_input": "a-secure-random-string-used-as-verifier",
+          "signing_key_hint": "None (Hashing only)",
+          "final_output": "xyz789",
+          "steps": [
+            {
+              "label": "1. Generate Code Verifier",
+              "value": "code_verifier = 'a-secure-random-string-used-as-verifier'"
+            },
+            {
+              "label": "2. Compute SHA256",
+              "value": "hash = SHA256(ASCII(code_verifier))"
+            },
+            {
+              "label": "3. Base64URL Encode",
+              "value": "code_challenge = BASE64URL-ENCODE(hash) → 'xyz789'"
+            }
+          ]
+        }
+      ],
+      "tokens": [],
+      "explanation": "The client redirects the user to the Authorization Server to grant access. It includes a PKCE code_challenge and specifies the target 'resource'.",
+      "annotations": [
+        "PKCE (Proof Key for Code Exchange) protects against authorization code interception.",
+        "The 'resource' parameter informs the Auth Server which API the client wants to access."
+      ],
+      "is_response": false
+    },
+    {
+      "step": 5,
+      "from": "user",
+      "to": "authz",
+      "label": "User Authenticates",
+      "method": "POST",
+      "url": "https://auth.example.com/login",
+      "request_headers": {
+        "Content-Type": "application/x-www-form-urlencoded"
+      },
+      "request_body": "username=alice&password=secret",
+      "response_status": 302,
+      "response_headers": {
+        "Location": "http://localhost:8080/callback?code=AUTH_CODE_123"
+      },
+      "response_body": null,
+      "artifacts": [],
+      "tokens": [],
+      "explanation": "The user authenticates with the Authorization Server and consents to the MCP Client's access request.",
+      "annotations": [
+        "Upon successful authentication, the server redirects back to the client's callback URL with an authorization code."
+      ],
+      "is_response": false
+    },
+    {
+      "step": 6,
+      "from": "client",
+      "to": "authz",
+      "label": "POST /token",
+      "method": "POST",
+      "url": "https://auth.example.com/token",
+      "request_headers": {
+        "Content-Type": "application/x-www-form-urlencoded"
+      },
+      "request_body": "grant_type=authorization_code&code=AUTH_CODE_123&client_id=mcp-app&redirect_uri=http://localhost:8080/callback&code_verifier=a-secure-random-string-used-as-verifier",
+      "response_status": 200,
+      "response_headers": {
+        "Content-Type": "application/json"
+      },
+      "response_body": {
+        "access_token": "eyJ0eXAiOiJKV1QiLCJhbGciOiJSUzI1NiJ9.eyJpc3MiOiJodHRwczovL2F1dGguZXhhbXBsZS5jb20iLCJzdWIiOiJhbGljZSIsImF1ZCI6Imh0dHBzOi8vYXBpLmV4YW1wbGUuY29tIiwiZXhwIjoxNzEzMzcwMDAwLCJpYXQiOjE3MTMzNjY0MDAsImNsaWVudF9pZCI6Im1jcC1hcHAifQ.mock_sig",
+        "token_type": "Bearer",
+        "expires_in": 3600
+      },
+      "artifacts": [],
+      "tokens": [
+        {
+          "name": "Access Token",
+          "typ": "JWT",
+          "raw": "eyJ0eXAiOiJKV1QiLCJhbGciOiJSUzI1NiJ9.eyJpc3MiOiJodHRwczovL2F1dGguZXhhbXBsZS5jb20iLCJzdWIiOiJhbGljZSIsImF1ZCI6Imh0dHBzOi8vYXBpLmV4YW1wbGUuY29tIiwiZXhwIjoxNzEzMzcwMDAwLCJpYXQiOjE3MTMzNjY0MDAsImNsaWVudF9pZCI6Im1jcC1hcHAifQ.mock_sig",
+          "header": {
+            "typ": "JWT",
+            "alg": "RS256"
+          },
+          "payload": {
+            "iss": "https://auth.example.com",
+            "sub": "alice",
+            "aud": "https://api.example.com",
+            "exp": 1713370000,
+            "iat": 1713366400,
+            "client_id": "mcp-app"
+          },
+          "signature_b64": "mock_sig"
+        }
+      ],
+      "explanation": "The client exchanges the authorization code for an Access Token. It proves it is the original requester by sending the PKCE code_verifier.",
+      "annotations": [
+        "The Authorization Server recalculates the SHA256 of the code_verifier and compares it to the original code_challenge."
+      ],
+      "is_response": false
+    },
+    {
+      "step": 7,
+      "from": "client",
+      "to": "mcp-server",
+      "label": "Authenticated POST",
+      "method": "POST",
+      "url": "https://api.example.com/mcp",
+      "request_headers": {
+        "Content-Type": "application/json",
+        "Authorization": "Bearer eyJ0eXAiOiJKV1QiLCJhbGciOiJSUzI1NiJ9.eyJpc3MiOiJodHRwczovL2F1dGguZXhhbXBsZS5jb20iLCJzdWIiOiJhbGljZSIsImF1ZCI6Imh0dHBzOi8vYXBpLmV4YW1wbGUuY29tIiwiZXhwIjoxNzEzMzcwMDAwLCJpYXQiOjE3MTMzNjY0MDAsImNsaWVudF9pZCI6Im1jcC1hcHAifQ.mock_sig"
+      },
+      "request_body": {
+        "jsonrpc": "2.0",
+        "method": "initialize",
+        "params": {}
+      },
+      "response_status": 200,
+      "response_headers": {
+        "Content-Type": "application/json"
+      },
+      "response_body": {
+        "jsonrpc": "2.0",
+        "result": {
+          "protocolVersion": "1.0",
+          "capabilities": {}
+        }
+      },
+      "artifacts": [],
+      "tokens": [
+        {
+          "name": "Access Token",
+          "typ": "JWT",
+          "raw": "eyJ0eXAiOiJKV1QiLCJhbGciOiJSUzI1NiJ9.eyJpc3MiOiJodHRwczovL2F1dGguZXhhbXBsZS5jb20iLCJzdWIiOiJhbGljZSIsImF1ZCI6Imh0dHBzOi8vYXBpLmV4YW1wbGUuY29tIiwiZXhwIjoxNzEzMzcwMDAwLCJpYXQiOjE3MTMzNjY0MDAsImNsaWVudF9pZCI6Im1jcC1hcHAifQ.mock_sig",
+          "header": {
+            "typ": "JWT",
+            "alg": "RS256"
+          },
+          "payload": {
+            "iss": "https://auth.example.com",
+            "sub": "alice",
+            "aud": "https://api.example.com",
+            "exp": 1713370000,
+            "iat": 1713366400,
+            "client_id": "mcp-app"
+          },
+          "signature_b64": "mock_sig"
+        }
+      ],
+      "explanation": "The MCP Client retries its request, this time including the Access Token. The MCP Server validates the token and processes the request.",
+      "annotations": [
+        "The MCP Server verifies the token's signature, audience (resource), and scopes before granting access."
+      ],
+      "is_response": false
+    }
+  ]
+}

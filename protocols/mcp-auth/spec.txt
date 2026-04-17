@@ -1,0 +1,12 @@
+# Model Context Protocol (MCP) Authorization
+
+The MCP authorization mechanism relies on OAuth 2.1, PKCE (Proof Key for Code Exchange), and OAuth 2.0 Protected Resource Metadata. It allows an MCP Client to securely authenticate with an MCP Server using an external Authorization Server.
+
+## Core Flow
+
+1. Discovery / Resource Challenge: An MCP Client attempts to communicate with a protected MCP Server without a token. The server rejects it with a 401 Unauthorized and points the client to its Protected Resource Metadata via a WWW-Authenticate header.
+2. Metadata Retrieval: The client fetches the MCP Server's metadata to discover the appropriate Authorization Server. It then queries the Authorization Server's metadata endpoint to discover supported endpoints.
+3. Client Identification: The client identifies itself to the Authorization Server.
+4. User Consent: The client opens the user's browser with an authorization URL, including the target resource and PKCE challenges. The user logs in and approves the request.
+5. Token Exchange: The browser redirects back to the MCP Client with an authorization code. The client then safely exchanges this code (using the PKCE verifier) for an Access Token at the Authorization Server.
+6. Authenticated Request: The client includes the new Access Token as a Bearer token in the Authorization header on subsequent requests to the MCP Server.
