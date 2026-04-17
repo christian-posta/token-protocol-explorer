@@ -29,16 +29,16 @@ const PROTOCOLS = [
     ],
   },
   {
-    id: "oauth2-dpop",
-    name: "OAuth 2.0 DPoP",
-    rfc: "RFC 9449",
-    rfcUrl: "https://www.rfc-editor.org/rfc/rfc9449.txt",
+    id: "oauth2",
+    name: "OAuth 2.0",
+    rfc: "RFC 6749",
+    rfcUrl: "https://www.rfc-editor.org/rfc/rfc6749.txt",
     accent: "border-indigo-500/35 hover:border-indigo-500/55",
     iconWrap: "bg-indigo-500/15 text-indigo-400",
     description:
-      "Demonstrating Proof-of-Possession at the Application Layer. Binds access tokens to a private key to prevent token replay and exfiltration using JWT-based DPoP proofs.",
+      "The industry-standard authorization framework. Explore advanced extension profiles like Proof-of-Possession (DPoP), PKCE, and token exchange.",
     scenarios: [
-      { label: "Full Flow", href: "/oauth2-dpop/full-flow" },
+      { label: "DPoP (RFC 9449)", href: "/oauth2/dpop" },
     ],
   },
 ];

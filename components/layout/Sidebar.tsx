@@ -33,10 +33,10 @@ const NAV: NavSection[] = [
     ],
   },
   {
-    title: "OAuth 2.0 DPoP",
+    title: "OAuth 2.0",
     color: "text-indigo-400",
     items: [
-      { label: "Full Flow", href: "/oauth2-dpop/full-flow" },
+      { label: "DPoP (RFC 9449)", href: "/oauth2/dpop" },
     ],
   },
 ];
