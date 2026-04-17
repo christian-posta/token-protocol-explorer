@@ -1,0 +1,291 @@
+{
+  "id": "oauth1a-happy-path",
+  "title": "OAuth 1.0a — Three-Legged Flow",
+  "description": "The complete OAuth 1.0a authorization code flow. Consumer obtains a Request Token, redirects the user to authorize, receives a verifier, exchanges for an Access Token, and makes a signed API call. Each step shows the full HMAC-SHA1 signature construction.",
+  "rfc": "RFC 5849",
+  "category": "OAuth 1.0a",
+  "participants": [
+    { "id": "consumer", "label": "Consumer App", "type": "client" },
+    { "id": "user", "label": "User / Browser", "type": "user" },
+    { "id": "sp", "label": "Service Provider", "type": "server" }
+  ],
+  "steps": [
+    {
+      "step": 1,
+      "from": "consumer",
+      "to": "sp",
+      "label": "POST /oauth/initiate",
+      "method": "POST",
+      "url": "https://api.example.com/oauth/initiate",
+      "request_headers": {
+        "Authorization": "OAuth realm=\"https://api.example.com\", oauth_consumer_key=\"dpf43f3p2l4k3l03\", oauth_nonce=\"wIjqoS\", oauth_callback=\"http%3A%2F%2Fconsumer.example.com%2Fcb\", oauth_signature_method=\"HMAC-SHA1\", oauth_timestamp=\"137131200\", oauth_version=\"1.0\", oauth_signature=\"74KNZJeDHnMBp0EMJ9ZHe%2FLfEeA%3D\"",
+        "Content-Type": "application/x-www-form-urlencoded",
+        "Host": "api.example.com"
+      },
+      "request_body": null,
+      "response_status": 200,
+      "response_headers": {
+        "Content-Type": "application/x-www-form-urlencoded"
+      },
+      "response_body": "oauth_token=hh5s93j4hdidpola&oauth_token_secret=hdhd0244k9j7ao03&oauth_callback_confirmed=true",
+      "artifacts": [
+        {
+          "type": "hmac-sha1",
+          "signing_key_hint": "kd94hf93k423kf44& (consumer_secret + \"&\" + empty_token_secret)",
+          "raw_input": "POST&https%3A%2F%2Fapi.example.com%2Foauth%2Finitiate&oauth_callback%3Dhttp%253A%252F%252Fconsumer.example.com%252Fcb%26oauth_consumer_key%3Ddpf43f3p2l4k3l03%26oauth_nonce%3DwIjqoS%26oauth_signature_method%3DHMAC-SHA1%26oauth_timestamp%3D137131200%26oauth_version%3D1.0",
+          "final_output": "74KNZJeDHnMBp0EMJ9ZHe/LfEeA=",
+          "steps": [
+            {
+              "label": "1. Collect OAuth Parameters",
+              "value": "oauth_callback=http%3A%2F%2Fconsumer.example.com%2Fcb\noauth_consumer_key=dpf43f3p2l4k3l03\noauth_nonce=wIjqoS\noauth_signature_method=HMAC-SHA1\noauth_timestamp=137131200\noauth_version=1.0"
+            },
+            {
+              "label": "2. Percent-encode and Sort Parameters",
+              "value": "oauth_callback=http%253A%252F%252Fconsumer.example.com%252Fcb\noauth_consumer_key=dpf43f3p2l4k3l03\noauth_nonce=wIjqoS\noauth_signature_method=HMAC-SHA1\noauth_timestamp=137131200\noauth_version=1.0"
+            },
+            {
+              "label": "3. Build Normalized Parameter String",
+              "value": "oauth_callback=http%253A%252F%252Fconsumer.example.com%252Fcb&oauth_consumer_key=dpf43f3p2l4k3l03&oauth_nonce=wIjqoS&oauth_signature_method=HMAC-SHA1&oauth_timestamp=137131200&oauth_version=1.0"
+            },
+            {
+              "label": "4. Build Signature Base String",
+              "value": "POST\n&\nhttps%3A%2F%2Fapi.example.com%2Foauth%2Finitiate\n&\noauth_callback%3Dhttp%253A%252F%252Fconsumer.example.com%252Fcb%26oauth_consumer_key%3Ddpf43f3p2l4k3l03%26oauth_nonce%3DwIjqoS%26oauth_signature_method%3DHMAC-SHA1%26oauth_timestamp%3D137131200%26oauth_version%3D1.0"
+            },
+            {
+              "label": "5. Build Signing Key",
+              "value": "kd94hf93k423kf44& (consumer_secret + \"&\" + empty_token_secret)"
+            },
+            {
+              "label": "6. Compute HMAC-SHA1 and Base64 Encode",
+              "value": "HMAC-SHA1(signing_key, base_string) → raw bytes → Base64\n→ 74KNZJeDHnMBp0EMJ9ZHe/LfEeA="
+            }
+          ]
+        }
+      ],
+      "tokens": [],
+      "explanation": "The Consumer begins the OAuth dance by requesting a temporary credential (Request Token) from the Service Provider. The request is signed with HMAC-SHA1 using only the Consumer Secret (token secret is empty at this stage). The oauth_callback tells the SP where to redirect the user after authorization.",
+      "annotations": [
+        "No oauth_token is sent in this request — the consumer only has its consumer_key and consumer_secret at this point.",
+        "The signing key is consumer_secret + \"&\" + \"\" (empty token secret), resulting in a trailing ampersand.",
+        "The oauth_nonce must be unique per request to prevent replay attacks.",
+        "Response includes oauth_callback_confirmed=true per OAuth 1.0a spec (RFC 5849 §2.1)."
+      ]
+    },
+    {
+      "step": 2,
+      "from": "consumer",
+      "to": "user",
+      "label": "Redirect → /oauth/authorize",
+      "method": "GET",
+      "url": "https://api.example.com/oauth/authorize?oauth_token=hh5s93j4hdidpola",
+      "request_headers": {},
+      "request_body": null,
+      "response_status": 302,
+      "response_headers": {
+        "Location": "https://api.example.com/oauth/authorize?oauth_token=hh5s93j4hdidpola"
+      },
+      "response_body": null,
+      "artifacts": [],
+      "tokens": [],
+      "explanation": "The Consumer redirects the User's browser to the Service Provider's authorization endpoint, passing the Request Token obtained in Step 1. No signature is required for this redirect.",
+      "annotations": [
+        "The consumer sends a 302 redirect to the user's browser pointing to the SP's /authorize endpoint.",
+        "The request token (oauth_token=hh5s93j4hdidpola) is passed as a query parameter.",
+        "The user must log in to the Service Provider if not already authenticated."
+      ]
+    },
+    {
+      "step": 3,
+      "from": "user",
+      "to": "sp",
+      "label": "GET /oauth/authorize",
+      "method": "GET",
+      "url": "https://api.example.com/oauth/authorize?oauth_token=hh5s93j4hdidpola",
+      "request_headers": {
+        "Host": "api.example.com",
+        "Cookie": "session=abc123"
+      },
+      "request_body": null,
+      "response_status": 200,
+      "response_headers": {
+        "Content-Type": "text/html; charset=utf-8"
+      },
+      "response_body": "<!-- HTML authorization page shown to the user -->\n<form method=\"POST\" action=\"/oauth/authorize\">\n  <p>Grant access to <strong>Example Consumer App</strong>?</p>\n  <input type=\"hidden\" name=\"oauth_token\" value=\"hh5s93j4hdidpola\" />\n  <button type=\"submit\" name=\"authorize\" value=\"1\">Authorize</button>\n  <button type=\"submit\" name=\"authorize\" value=\"0\">Deny</button>\n</form>",
+      "artifacts": [],
+      "tokens": [],
+      "explanation": "The user's browser follows the redirect and loads the Service Provider's authorization page. The SP uses the oauth_token to look up what the Consumer is requesting access to and presents the user with an Authorize/Deny prompt.",
+      "annotations": [
+        "The SP validates the oauth_token against its database of issued request tokens.",
+        "The authorization page shows the Consumer's registered name and the permissions being requested.",
+        "The user must explicitly grant or deny access — OAuth 1.0a requires user consent."
+      ]
+    },
+    {
+      "step": 4,
+      "from": "user",
+      "to": "sp",
+      "label": "POST /oauth/authorize (Grant)",
+      "method": "POST",
+      "url": "https://api.example.com/oauth/authorize",
+      "request_headers": {
+        "Content-Type": "application/x-www-form-urlencoded",
+        "Host": "api.example.com",
+        "Cookie": "session=abc123"
+      },
+      "request_body": "oauth_token=hh5s93j4hdidpola&authorize=1",
+      "response_status": 302,
+      "response_headers": {
+        "Location": "http://consumer.example.com/cb?oauth_token=hh5s93j4hdidpola&oauth_verifier=hfdp7dh39dks9884"
+      },
+      "response_body": null,
+      "artifacts": [],
+      "tokens": [],
+      "explanation": "The user clicks 'Authorize'. The Service Provider marks the Request Token as authorized, generates a one-time-use verifier code (oauth_verifier), and redirects the user's browser back to the Consumer's callback URL. This verifier prevents CSRF attacks during the token exchange.",
+      "annotations": [
+        "The SP ties the oauth_verifier to the specific request token — it can only be used once.",
+        "The oauth_verifier is cryptographically random and short-lived.",
+        "If the user clicks 'Deny', the SP redirects with oauth_problem=user_refused instead.",
+        "RFC 5849 §2.2 — the verifier MUST be passed back via the callback URL."
+      ]
+    },
+    {
+      "step": 5,
+      "from": "user",
+      "to": "consumer",
+      "label": "Callback with oauth_verifier",
+      "method": "GET",
+      "url": "http://consumer.example.com/cb?oauth_token=hh5s93j4hdidpola&oauth_verifier=hfdp7dh39dks9884",
+      "request_headers": {
+        "Host": "consumer.example.com"
+      },
+      "request_body": null,
+      "response_status": 200,
+      "response_headers": {
+        "Content-Type": "text/html"
+      },
+      "response_body": null,
+      "artifacts": [],
+      "tokens": [],
+      "explanation": "The user's browser follows the SP's redirect to the Consumer's callback URL. The Consumer's server receives the oauth_token (to confirm which request token was authorized) and the oauth_verifier (to use in the next step when exchanging for an Access Token).",
+      "annotations": [
+        "The Consumer must verify that the oauth_token matches the one it originally received in Step 1.",
+        "The oauth_verifier will be used in Step 6 to prove to the SP that the user granted consent.",
+        "The Consumer stores the verifier and proceeds to exchange the request token."
+      ]
+    },
+    {
+      "step": 6,
+      "from": "consumer",
+      "to": "sp",
+      "label": "POST /oauth/token",
+      "method": "POST",
+      "url": "https://api.example.com/oauth/token",
+      "request_headers": {
+        "Authorization": "OAuth realm=\"https://api.example.com\", oauth_consumer_key=\"dpf43f3p2l4k3l03\", oauth_token=\"hh5s93j4hdidpola\", oauth_nonce=\"walatlh\", oauth_verifier=\"hfdp7dh39dks9884\", oauth_signature_method=\"HMAC-SHA1\", oauth_timestamp=\"137131201\", oauth_version=\"1.0\", oauth_signature=\"gKgrFCywp7rO0OXSjdot%2FIHRoVg%3D\"",
+        "Content-Type": "application/x-www-form-urlencoded",
+        "Host": "api.example.com"
+      },
+      "request_body": null,
+      "response_status": 200,
+      "response_headers": {
+        "Content-Type": "application/x-www-form-urlencoded"
+      },
+      "response_body": "oauth_token=nnch734d00sl2jdk&oauth_token_secret=pfkkdhi9sl3r4s00",
+      "artifacts": [
+        {
+          "type": "hmac-sha1",
+          "signing_key_hint": "kd94hf93k423kf44&hdhd0244k9j7ao03 (consumer_secret&request_token_secret)",
+          "raw_input": "POST&https%3A%2F%2Fapi.example.com%2Foauth%2Ftoken&oauth_consumer_key%3Ddpf43f3p2l4k3l03%26oauth_nonce%3Dwalatlh%26oauth_signature_method%3DHMAC-SHA1%26oauth_timestamp%3D137131201%26oauth_token%3Dhh5s93j4hdidpola%26oauth_verifier%3Dhfdp7dh39dks9884%26oauth_version%3D1.0",
+          "final_output": "gKgrFCywp7rO0OXSjdot/IHRoVg=",
+          "steps": [
+            {
+              "label": "1. Collect OAuth Parameters",
+              "value": "oauth_consumer_key=dpf43f3p2l4k3l03\noauth_nonce=walatlh\noauth_signature_method=HMAC-SHA1\noauth_timestamp=137131201\noauth_token=hh5s93j4hdidpola\noauth_verifier=hfdp7dh39dks9884\noauth_version=1.0"
+            },
+            {
+              "label": "2. Sort and Percent-encode Parameters",
+              "value": "oauth_consumer_key%3Ddpf43f3p2l4k3l03%26oauth_nonce%3Dwalatlh%26oauth_signature_method%3DHMAC-SHA1%26oauth_timestamp%3D137131201%26oauth_token%3Dhh5s93j4hdidpola%26oauth_verifier%3Dhfdp7dh39dks9884%26oauth_version%3D1.0"
+            },
+            {
+              "label": "3. Build Signature Base String",
+              "value": "POST\n&\nhttps%3A%2F%2Fapi.example.com%2Foauth%2Ftoken\n&\noauth_consumer_key%3Ddpf43f3p2l4k3l03%26oauth_nonce%3Dwalatlh%26oauth_signature_method%3DHMAC-SHA1%26oauth_timestamp%3D137131201%26oauth_token%3Dhh5s93j4hdidpola%26oauth_verifier%3Dhfdp7dh39dks9884%26oauth_version%3D1.0"
+            },
+            {
+              "label": "4. Build Signing Key (NOW includes Request Token Secret)",
+              "value": "kd94hf93k423kf44&hdhd0244k9j7ao03\n(consumer_secret + \"&\" + request_token_secret)"
+            },
+            {
+              "label": "5. Compute HMAC-SHA1 and Base64 Encode",
+              "value": "HMAC-SHA1(signing_key, base_string) → raw bytes → Base64\n→ gKgrFCywp7rO0OXSjdot/IHRoVg="
+            }
+          ]
+        }
+      ],
+      "tokens": [],
+      "explanation": "The Consumer exchanges the authorized Request Token for a long-lived Access Token. This request must be signed with the consumer_secret AND the request_token_secret (obtained in Step 1). The oauth_verifier proves the user granted consent. On success, the SP returns a new Access Token and Access Token Secret.",
+      "annotations": [
+        "Key difference from Step 1: the signing key now includes the request token secret (hdhd0244k9j7ao03).",
+        "The oauth_verifier is consumed here — the SP marks it as used and it cannot be reused.",
+        "The request token (hh5s93j4hdidpola) is now invalidated by the SP.",
+        "The Access Token (nnch734d00sl2jdk) and its secret (pfkkdhi9sl3r4s00) should be stored securely by the Consumer."
+      ]
+    },
+    {
+      "step": 7,
+      "from": "consumer",
+      "to": "sp",
+      "label": "GET /api/photos (protected)",
+      "method": "GET",
+      "url": "https://api.example.com/photos?file=vacation.jpg&size=original",
+      "request_headers": {
+        "Authorization": "OAuth realm=\"https://api.example.com\", oauth_consumer_key=\"dpf43f3p2l4k3l03\", oauth_token=\"nnch734d00sl2jdk\", oauth_nonce=\"kllo9940pd9333jh\", oauth_signature_method=\"HMAC-SHA1\", oauth_timestamp=\"1191242096\", oauth_version=\"1.0\", oauth_signature=\"tR3%2BTy81lMeYAr%2FFid0kMTYa%2FWM%3D\"",
+        "Host": "api.example.com"
+      },
+      "request_body": null,
+      "response_status": 200,
+      "response_headers": {
+        "Content-Type": "image/jpeg",
+        "Content-Length": "42048"
+      },
+      "response_body": { "status": "200 OK", "note": "Binary JPEG image data returned (42 KB)" },
+      "artifacts": [
+        {
+          "type": "hmac-sha1",
+          "signing_key_hint": "kd94hf93k423kf44&pfkkdhi9sl3r4s00 (consumer_secret&access_token_secret)",
+          "raw_input": "GET&https%3A%2F%2Fapi.example.com%2Fphotos&file%3Dvacation.jpg%26oauth_consumer_key%3Ddpf43f3p2l4k3l03%26oauth_nonce%3Dkllo9940pd9333jh%26oauth_signature_method%3DHMAC-SHA1%26oauth_timestamp%3D1191242096%26oauth_token%3Dnnch734d00sl2jdk%26oauth_version%3D1.0%26size%3Doriginal",
+          "final_output": "tR3+Ty81lMeYAr/Fid0kMTYa/WM=",
+          "steps": [
+            {
+              "label": "1. Collect ALL Request Parameters (OAuth + Query String)",
+              "value": "file=vacation.jpg\noauth_consumer_key=dpf43f3p2l4k3l03\noauth_nonce=kllo9940pd9333jh\noauth_signature_method=HMAC-SHA1\noauth_timestamp=1191242096\noauth_token=nnch734d00sl2jdk\noauth_version=1.0\nsize=original"
+            },
+            {
+              "label": "2. Sort Alphabetically and Percent-encode",
+              "value": "file%3Dvacation.jpg%26oauth_consumer_key%3Ddpf43f3p2l4k3l03%26oauth_nonce%3Dkllo9940pd9333jh%26oauth_signature_method%3DHMAC-SHA1%26oauth_timestamp%3D1191242096%26oauth_token%3Dnnch734d00sl2jdk%26oauth_version%3D1.0%26size%3Doriginal"
+            },
+            {
+              "label": "3. Build Signature Base String",
+              "value": "GET\n&\nhttps%3A%2F%2Fapi.example.com%2Fphotos\n&\nfile%3Dvacation.jpg%26oauth_consumer_key%3Ddpf43f3p2l4k3l03%26oauth_nonce%3Dkllo9940pd9333jh%26oauth_signature_method%3DHMAC-SHA1%26oauth_timestamp%3D1191242096%26oauth_token%3Dnnch734d00sl2jdk%26oauth_version%3D1.0%26size%3Doriginal"
+            },
+            {
+              "label": "4. Build Signing Key (Access Token Secret)",
+              "value": "kd94hf93k423kf44&pfkkdhi9sl3r4s00\n(consumer_secret + \"&\" + access_token_secret)"
+            },
+            {
+              "label": "5. Compute HMAC-SHA1 and Base64 Encode",
+              "value": "HMAC-SHA1(signing_key, base_string) → raw bytes → Base64\n→ tR3+Ty81lMeYAr/Fid0kMTYa/WM="
+            }
+          ]
+        }
+      ],
+      "tokens": [],
+      "explanation": "The Consumer makes a signed API call to the protected resource using the Access Token. IMPORTANT: query string parameters (file, size) must be included in the signature base string along with OAuth parameters — failing to include them is a common implementation bug. The signing key uses the Access Token Secret obtained in Step 6.",
+      "annotations": [
+        "The signing key now uses the access token secret (pfkkdhi9sl3r4s00) — different from the request token secret.",
+        "Query parameters (file=vacation.jpg, size=original) MUST be included in the signature base string.",
+        "This is a common source of bugs: developers forget to include query params in the OAuth signature.",
+        "The Access Token can be reused for subsequent API calls until it expires or is revoked."
+      ]
+    }
+  ]
+}
