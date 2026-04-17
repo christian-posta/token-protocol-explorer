@@ -9,6 +9,17 @@ export interface Participant {
   port?: number;
 }
 
+// ─── Tokens ───────────────────────────────────────────────────────────────────
+
+export interface DecodedToken {
+  name: string;         // e.g. "Access Token", "DPoP Proof"
+  typ: string;          // e.g. "at+jwt", "dpop+jwt"
+  raw: string;          // Full JWT string
+  header: Record<string, unknown>;
+  payload: Record<string, unknown>;
+  signature_b64: string;
+}
+
 // ─── Crypto Artifacts ─────────────────────────────────────────────────────────
 
 export type CryptoArtifactType = "hmac-sha1" | "hmac-sha256" | "rsa-sha256" | "jwt" | "custom";
@@ -45,7 +56,7 @@ export interface ProtocolStep {
 
   // Protocol-specific
   artifacts: CryptoArtifact[];
-  tokens: unknown[];
+  tokens: DecodedToken[];
 
   // Narrative
   explanation: string;

@@ -8,6 +8,7 @@ import { useScenarioStore } from "@/lib/store";
 import { SequenceDiagram } from "@/components/core/SequenceDiagram";
 import { HeaderInspector } from "@/components/core/HeaderInspector";
 import { CryptoArtifactVisualizer } from "@/components/core/CryptoArtifactVisualizer";
+import { JWTViewer } from "@/components/core/JWTViewer";
 import { StepController } from "@/components/core/StepController";
 import { cn } from "@/lib/utils";
 
@@ -132,6 +133,15 @@ export function ScenarioPage({ scenario }: ScenarioPageProps) {
               {/* Crypto Artifacts (HMAC-SHA1 signature breakdown) */}
               {step.artifacts && step.artifacts.length > 0 && (
                 <CryptoArtifactVisualizer artifacts={step.artifacts} />
+              )}
+
+              {/* Tokens (Decoded JWTs) */}
+              {step.tokens && step.tokens.length > 0 && (
+                <div className="space-y-4">
+                  {step.tokens.map((token, i) => (
+                    <JWTViewer key={i} token={token} />
+                  ))}
+                </div>
               )}
             </motion.div>
           )}

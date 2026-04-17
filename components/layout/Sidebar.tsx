@@ -32,6 +32,13 @@ const NAV: NavSection[] = [
       { label: "API Request", href: "/aws-sigv4/api-request" },
     ],
   },
+  {
+    title: "OAuth 2.0 DPoP",
+    color: "text-indigo-400",
+    items: [
+      { label: "Full Flow", href: "/oauth2-dpop/full-flow" },
+    ],
+  },
 ];
 
 function SidebarSection({ section, defaultOpen }: { section: NavSection; defaultOpen: boolean }) {

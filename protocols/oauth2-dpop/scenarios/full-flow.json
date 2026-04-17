@@ -1,0 +1,190 @@
+{
+  "id": "oauth2-dpop-full-flow",
+  "title": "OAuth 2.0 DPoP — Full Flow",
+  "description": "Demonstrating Proof-of-Possession (DPoP) at the application layer. The client generates a DPoP proof to bind the access token to a private key, preventing token replay.",
+  "rfc": "RFC 9449",
+  "category": "OAuth 2.0 DPoP",
+  "participants": [
+    {
+      "id": "client",
+      "label": "Client Application",
+      "type": "client"
+    },
+    {
+      "id": "authz",
+      "label": "Authz Server",
+      "type": "idp"
+    },
+    {
+      "id": "resource",
+      "label": "Resource Server",
+      "type": "server"
+    }
+  ],
+  "steps": [
+    {
+      "step": 1,
+      "from": "client",
+      "to": "authz",
+      "label": "POST /token",
+      "method": "POST",
+      "url": "https://auth.example.com/token",
+      "request_headers": {
+        "Content-Type": "application/x-www-form-urlencoded",
+        "DPoP": "eyJ0eXAiOiJkcG9wK2p3dCIsImFsZyI6IkVTMjU2IiwiandrIjp7Imt0eSI6IkVDIiwieCI6Imw4QkZkYW1Rcm02VW11RVBZNnIxcXlKRGxiM1V0M2pYV2l1S240LUdSM0EiLCJ5IjoiX2VLUHNJX3VzZV8yZmt6akRqaHFxOHFWZV8yb1Z2SW81akxRM01oNDF1TSIsImNydiI6IlAtMjU2In19.eyJqdGkiOiItQndDMGVBTVplYTVHcFpEIiwiaHRtIjoiUE9TVCIsImh0dSI6Imh0dHBzOi8vYXV0aC5leGFtcGxlLmNvbS90b2tlbiIsImlhdCI6MTU2MjI2MjYxNn0.2-G04T..."
+      },
+      "request_body": "grant_type=authorization_code&code=SPLIT_123&client_id=my_client",
+      "response_status": 200,
+      "response_headers": {
+        "Content-Type": "application/json"
+      },
+      "response_body": {
+        "access_token": "eyJ0eXAiOiJhdCtqd3QiLCJhbGciOiJFUzI1NiJ9.eyJpc3MiOiJodHRwczovL2F1dGguZXhhbXBsZS5jb20iLCJzdWIiOiJ1c2VyMTIzIiwiYXVkIjoiaHR0cHM6Ly9hcGkuZXhhbXBsZS5jb20iLCJleHAiOjE1NjIyNjYyMTYsImlhdCI6MTU2MjI2MjYxNiwiY25mIjp7ImprdCI6IjBaaG03UE1VWHk4M3Ztdm91RmZIRmEydFlxTXdZVWg3aUNwVlhqUm82U2MifX0.mock_sig",
+        "token_type": "DPoP",
+        "expires_in": 3600
+      },
+      "artifacts": [
+        {
+          "type": "jwt",
+          "raw_input": "eyJ0eXAiOiJkcG9wK2p3dCIsImFsZyI6IkVTMjU2IiwiandrIjp7Imt0eSI6IkVDIiwieCI6Imw4QkZkYW1Rcm02VW11RVBZNnIxcXlKRGxiM1V0M2pYV2l1S240LUdSM0EiLCJ5IjoiX2VLUHNJX3VzZV8yZmt6akRqaHFxOHFWZV8yb1Z2SW81akxRM01oNDF1TSIsImNydiI6IlAtMjU2In19.eyJqdGkiOiItQndDMGVBTVplYTVHcFpEIiwiaHRtIjoiUE9TVCIsImh0dSI6Imh0dHBzOi8vYXV0aC5leGFtcGxlLmNvbS90b2tlbiIsImlhdCI6MTU2MjI2MjYxNn0",
+          "signing_key_hint": "Client's ES256 Private Key",
+          "final_output": "2-G04T...",
+          "steps": [
+            {
+              "label": "1. Build JWT Header (includes Public Key)",
+              "value": "{\n  \"typ\": \"dpop+jwt\",\n  \"alg\": \"ES256\",\n  \"jwk\": {\n    \"kty\": \"EC\",\n    \"x\": \"l8BFdamQrm6UmuEPY6r1qyJDlb3Ut3jXWiuKn4-GR3A\",\n    \"y\": \"_eKPsI_use_2fkzDjhhqq8qVe_2oVvIo5jLQ3Mh41uM\",\n    \"crv\": \"P-256\"\n  }\n}"
+            },
+            {
+              "label": "2. Build JWT Payload",
+              "value": "{\n  \"jti\": \"-BwC0eAMZea5GpZD\",\n  \"htm\": \"POST\",\n  \"htu\": \"https://auth.example.com/token\",\n  \"iat\": 1562262616\n}"
+            },
+            {
+              "label": "3. Sign JWT",
+              "value": "ES256(Base64Url(Header) + \".\" + Base64Url(Payload), PrivateKey) → Signature"
+            }
+          ]
+        }
+      ],
+      "tokens": [
+        {
+          "name": "DPoP Proof",
+          "typ": "dpop+jwt",
+          "raw": "eyJ0eXAiOiJkcG9wK2p3dCIsImFsZyI6IkVTMjU2IiwiandrIjp7Imt0eSI6IkVDIiwieCI6Imw4QkZkYW1Rcm02VW11RVBZNnIxcXlKRGxiM1V0M2pYV2l1S240LUdSM0EiLCJ5IjoiX2VLUHNJX3VzZV8yZmt6akRqaHFxOHFWZV8yb1Z2SW81akxRM01oNDF1TSIsImNydiI6IlAtMjU2In19.eyJqdGkiOiItQndDMGVBTVplYTVHcFpEIiwiaHRtIjoiUE9TVCIsImh0dSI6Imh0dHBzOi8vYXV0aC5leGFtcGxlLmNvbS90b2tlbiIsImlhdCI6MTU2MjI2MjYxNn0.2-G04T...",
+          "header": {
+            "typ": "dpop+jwt",
+            "alg": "ES256",
+            "jwk": {
+              "kty": "EC",
+              "x": "l8BFdamQrm6UmuEPY6r1qyJDlb3Ut3jXWiuKn4-GR3A",
+              "y": "_eKPsI_use_2fkzDjhhqq8qVe_2oVvIo5jLQ3Mh41uM",
+              "crv": "P-256"
+            }
+          },
+          "payload": {
+            "jti": "-BwC0eAMZea5GpZD",
+            "htm": "POST",
+            "htu": "https://auth.example.com/token",
+            "iat": 1562262616
+          },
+          "signature_b64": "2-G04T..."
+        },
+        {
+          "name": "Access Token",
+          "typ": "at+jwt",
+          "raw": "eyJ0eXAiOiJhdCtqd3QiLCJhbGciOiJFUzI1NiJ9.eyJpc3MiOiJodHRwczovL2F1dGguZXhhbXBsZS5jb20iLCJzdWIiOiJ1c2VyMTIzIiwiYXVkIjoiaHR0cHM6Ly9hcGkuZXhhbXBsZS5jb20iLCJleHAiOjE1NjIyNjYyMTYsImlhdCI6MTU2MjI2MjYxNiwiY25mIjp7ImprdCI6IjBaaG03UE1VWHk4M3Ztdm91RmZIRmEydFlxTXdZVWg3aUNwVlhqUm82U2MifX0.mock_sig",
+          "header": {
+            "typ": "at+jwt",
+            "alg": "ES256"
+          },
+          "payload": {
+            "iss": "https://auth.example.com",
+            "sub": "user123",
+            "aud": "https://api.example.com",
+            "exp": 1562266216,
+            "iat": 1562262616,
+            "cnf": {
+              "jkt": "0Zhm7PMUXy83vmvouFfHFa2tYqMwYUh7iCpVXjRo6Sc"
+            }
+          },
+          "signature_b64": "mock_sig"
+        }
+      ],
+      "explanation": "The client requests an access token and includes a DPoP header. The DPoP header is a signed JWT containing the client's public key (in the jwk header) and the HTTP request details (htm, htu in payload).",
+      "annotations": [
+        "The Authorization Server validates the DPoP proof's signature.",
+        "It then binds the issued access token to the public key by embedding its JWK Thumbprint (RFC 7638) in the 'cnf' claim of the token.",
+        "The token_type in the response is 'DPoP' rather than 'Bearer'."
+      ]
+    },
+    {
+      "step": 2,
+      "from": "client",
+      "to": "resource",
+      "label": "POST /protected",
+      "method": "POST",
+      "url": "https://api.example.com/protected",
+      "request_headers": {
+        "Authorization": "DPoP eyJ0eXAiOiJhdCtqd3QiLCJhbGciOiJFUzI1NiJ9.eyJpc3MiOiJodHRwczovL2F1dGguZXhhbXBsZS5jb20iLCJzdWIiOiJ1c2VyMTIzIiwiYXVkIjoiaHR0cHM6Ly9hcGkuZXhhbXBsZS5jb20iLCJleHAiOjE1NjIyNjYyMTYsImlhdCI6MTU2MjI2MjYxNiwiY25mIjp7ImprdCI6IjBaaG03UE1VWHk4M3Ztdm91RmZIRmEydFlxTXdZVWg3aUNwVlhqUm82U2MifX0.mock_sig",
+        "Content-Type": "application/json",
+        "DPoP": "eyJ0eXAiOiJkcG9wK2p3dCIsImFsZyI6IkVTMjU2In0.eyJqdGkiOiJBaHROaXhsRThPZyIsImh0bSI6IlBPU1QiLCJodHUiOiJodHRwczovL2FwaS5leGFtcGxlLmNvbS9wcm90ZWN0ZWQiLCJpYXQiOjE1NjIyNjI2MTh9.aBcDe..."
+      },
+      "request_body": {
+        "action": "transfer",
+        "amount": 500
+      },
+      "response_status": 200,
+      "response_headers": {
+        "Content-Type": "application/json"
+      },
+      "response_body": {
+        "status": "success",
+        "message": "Transfer complete"
+      },
+      "artifacts": [
+        {
+          "type": "jwt",
+          "raw_input": "eyJ0eXAiOiJkcG9wK2p3dCIsImFsZyI6IkVTMjU2In0.eyJqdGkiOiJBaHROaXhsRThPZyIsImh0bSI6IlBPU1QiLCJodHUiOiJodHRwczovL2FwaS5leGFtcGxlLmNvbS9wcm90ZWN0ZWQiLCJpYXQiOjE1NjIyNjI2MTh9",
+          "signing_key_hint": "Client's ES256 Private Key",
+          "final_output": "aBcDe...",
+          "steps": [
+            {
+              "label": "1. Build JWT Header (No JWK needed)",
+              "value": "{\n  \"typ\": \"dpop+jwt\",\n  \"alg\": \"ES256\"\n}"
+            },
+            {
+              "label": "2. Build JWT Payload (Fresh JTI and URL)",
+              "value": "{\n  \"jti\": \"AhtNixlE8Og\",\n  \"htm\": \"POST\",\n  \"htu\": \"https://api.example.com/protected\",\n  \"iat\": 1562262618\n}"
+            },
+            {
+              "label": "3. Sign JWT",
+              "value": "ES256(Base64Url(Header) + \".\" + Base64Url(Payload), PrivateKey) → Signature"
+            }
+          ]
+        }
+      ],
+      "tokens": [
+        {
+          "name": "DPoP Proof",
+          "typ": "dpop+jwt",
+          "raw": "eyJ0eXAiOiJkcG9wK2p3dCIsImFsZyI6IkVTMjU2In0.eyJqdGkiOiJBaHROaXhsRThPZyIsImh0bSI6IlBPU1QiLCJodHUiOiJodHRwczovL2FwaS5leGFtcGxlLmNvbS9wcm90ZWN0ZWQiLCJpYXQiOjE1NjIyNjI2MTh9.aBcDe...",
+          "header": {
+            "typ": "dpop+jwt",
+            "alg": "ES256"
+          },
+          "payload": {
+            "jti": "AhtNixlE8Og",
+            "htm": "POST",
+            "htu": "https://api.example.com/protected",
+            "iat": 1562262618
+          },
+          "signature_b64": "aBcDe..."
+        }
+      ],
+      "explanation": "The client accesses the resource server. It proves possession of the private key by generating a new DPoP proof specifically for this API request. The resource server verifies the signature and ensures the public key hash matches the 'cnf' claim in the access token.",
+      "annotations": [
+        "The new DPoP proof is bound to the specific HTTP method and URL (htm, htu), preventing it from being intercepted and replayed on other endpoints.",
+        "RFC 9449 §4.1 notes that the 'jwk' header is NOT RECOMMENDED in proofs sent to the resource server, as the server should extract the required public key via the access token's 'cnf' claim."
+      ]
+    }
+  ]
+}
