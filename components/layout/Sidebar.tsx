@@ -49,6 +49,13 @@ const NAV: NavSection[] = [
       { label: "Signature-Key Schemes", href: "/http-signatures/signature-key-schemes" },
     ],
   },
+  {
+    title: "CB4A",
+    color: "text-cyan-400",
+    items: [
+      { label: "Happy Path (Token Minting)", href: "/cb4a/happy-path" },
+    ],
+  },
 ];
 
 function SidebarSection({ section, defaultOpen }: { section: NavSection; defaultOpen: boolean }) {

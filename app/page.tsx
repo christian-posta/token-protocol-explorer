@@ -57,6 +57,19 @@ const PROTOCOLS = [
       { label: "Signature-Key Header (Draft)", href: "/http-signatures/signature-key-schemes" },
     ],
   },
+  {
+    id: "cb4a",
+    name: "Credential Broker for Agents",
+    rfc: "draft-hartman-cb4a-00",
+    rfcUrl: "https://datatracker.ietf.org/doc/draft-hartman-credential-broker-4-agents/",
+    accent: "border-cyan-500/35 hover:border-cyan-500/55",
+    iconWrap: "bg-cyan-500/15 text-cyan-400",
+    description:
+      "IETF draft protocol that solves credential sprawl in agentic AI systems. Instead of agents holding long-lived API keys, a Policy Decision Point (PDP) and Credential Delivery Point (CDP) collaborate to issue short-lived, DPoP-bound tokens.",
+    scenarios: [
+      { label: "Happy Path (Token Minting)", href: "/cb4a/happy-path" },
+    ],
+  },
 ];
 
 export default function HomePage() {
