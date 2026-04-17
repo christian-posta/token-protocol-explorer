@@ -71,6 +71,19 @@ const PROTOCOLS = [
       { label: "Happy Path (Token Minting)", href: "/cb4a/happy-path" },
     ],
   },
+  {
+    id: "aauth",
+    name: "AAuth",
+    rfc: "aauth.dev",
+    rfcUrl: "https://aauth.dev",
+    accent: "border-rose-500/35 hover:border-rose-500/55",
+    iconWrap: "bg-rose-500/15 text-rose-400",
+    description:
+      "AAuth is an Agent Authentication protocol designed for programmatic, autonomous agent-to-agent communication.",
+    scenarios: [
+      { label: "Protocol Explorer", href: process.env.NEXT_PUBLIC_AAUTH_URL || "https://aauth-implementation.vercel.app", external: true },
+    ],
+  },
 ];
 
 export default function HomePage() {
@@ -128,16 +141,28 @@ export default function HomePage() {
                 </div>
               </div>
               <div className="flex flex-wrap gap-2 pt-1">
-                {proto.scenarios.map((s) => (
-                  <Link
-                    key={s.href}
-                    href={s.href}
-                    className="inline-flex items-center gap-1.5 rounded-md border border-border bg-background/60 px-3 py-1.5 text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-accent/50 transition-colors"
-                  >
-                    {s.label}
-                    <ArrowRight className="h-3 w-3 opacity-70" />
-                  </Link>
-                ))}
+                {proto.scenarios.map((s) => 
+                  "external" in s && s.external ? (
+                    <a
+                      key={s.href}
+                      href={s.href}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1.5 rounded-md border border-border bg-background/60 px-3 py-1.5 text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-accent/50 transition-colors"
+                    >
+                      {s.label} ↗
+                    </a>
+                  ) : (
+                    <Link
+                      key={s.href}
+                      href={s.href}
+                      className="inline-flex items-center gap-1.5 rounded-md border border-border bg-background/60 px-3 py-1.5 text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-accent/50 transition-colors"
+                    >
+                      {s.label}
+                      <ArrowRight className="h-3 w-3 opacity-70" />
+                    </Link>
+                  )
+                )}
               </div>
             </div>
           ))}

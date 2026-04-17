@@ -9,6 +9,7 @@ import { cn } from "@/lib/utils";
 interface NavItem {
   label: string;
   href: string;
+  external?: boolean;
 }
 
 interface NavSection {
@@ -57,6 +58,13 @@ const NAV: NavSection[] = [
       { label: "Happy Path (Token Minting)", href: "/cb4a/happy-path" },
     ],
   },
+  {
+    title: "AAuth",
+    color: "text-rose-400",
+    items: [
+      { label: "Protocol Explorer ↗", href: process.env.NEXT_PUBLIC_AAUTH_URL || "https://aauth-implementation.vercel.app", external: true },
+    ],
+  },
 ];
 
 function SidebarSection({ section, defaultOpen }: { section: NavSection; defaultOpen: boolean }) {
@@ -85,6 +93,22 @@ function SidebarSection({ section, defaultOpen }: { section: NavSection; default
       {open && (
         <div className="mt-0.5 ml-4 border-l border-border pl-3 space-y-0.5">
           {section.items.map((item) => {
+            if (item.external) {
+              return (
+                <a
+                  key={item.href}
+                  href={item.href}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className={cn(
+                    "flex items-center gap-2 rounded-md px-2.5 py-1.5 text-sm transition-colors",
+                    "text-muted-foreground hover:text-foreground hover:bg-accent/50"
+                  )}
+                >
+                  <span className="flex-1">{item.label}</span>
+                </a>
+              );
+            }
             const active = pathname === item.href;
             return (
               <Link
