@@ -1,7 +1,7 @@
 {
   "id": "client-instance-assertion-spiffe-workload",
   "title": "Client Instance Assertion \u2014 SPIFFE Workload (SPIRE \u2192 OAuth)",
-  "description": "A Kubernetes pod attested by SPIRE fetches a JWT-SVID from the SPIFFE Workload API, then exchanges it at a SPIFFE-OAuth adapter (Instance Issuer) to receive a re-minted client-instance+jwt. The re-minted assertion adds cnf.jkt (DPoP key binding), client_id, and the required typ \u2014 bridging SPIFFE workload identity into OAuth sender-constrained tokens.",
+  "description": "A Kubernetes pod attested by SPIRE fetches a JWT-SVID from the SPIFFE Workload API, then exchanges it at a SPIFFE-OAuth adapter (Instance Issuer) to receive a re-minted client-instance+jwt. The re-minted assertion adds cnf.jkt (DPoP key binding), client_id, and the required typ \u2014 bridging SPIFFE workload identity into OAuth sender-constrained tokens. SPIRE's CredentialComposer cannot bind a workload-supplied public key into JWT-SVIDs during issuance (the API provides no mechanism for the workload to inject cnf.jkt at SVID mint time), so the adapter must independently verify key possession via a DPoP-style proof before embedding cnf.jkt. Without this proof step, a stolen SVID could be used with an arbitrary public key, binding the wrong key into the re-minted assertion.",
   "rfc": "IETF Draft",
   "category": "Client Instance Assertion",
   "participants": [
@@ -142,27 +142,48 @@
       "step": 3,
       "from": "workload",
       "to": "issuer",
-      "label": "POST /assert (SVID exchange)",
+      "label": "POST /assert (SVID + key proof)",
       "method": "POST",
       "url": "https://issuer.openai.example.com/assert",
       "request_headers": {
         "Content-Type": "application/x-www-form-urlencoded",
         "Host": "issuer.openai.example.com"
       },
-      "request_body": "svid=eyJhbGciOiJFUzI1NiIs...SPIRE_SIG&public_key=%7B%22kty%22%3A%22EC%22%2C%22crv%22%3A%22P-256%22%2C%22x%22%3A%22EC_pub_x%22%2C%22y%22%3A%22EC_pub_y%22%7D&client_id=https%3A%2F%2Fopenai.example.com%2Fcodex&audience=https%3A%2F%2Fas.example.com",
+      "request_body": "svid=eyJhbGciOiJFUzI1NiIs...SPIRE_SIG&public_key=%7B%22kty%22%3A%22EC%22%2C%22crv%22%3A%22P-256%22%2C%22x%22%3A%22EC_pub_x%22%2C%22y%22%3A%22EC_pub_y%22%7D&key_proof=eyJ0eXAiOiJkcG9wK2p3dCIs...WORKLOAD_KEY_PROOF_SIG&client_id=https%3A%2F%2Fopenai.example.com%2Fcodex&audience=https%3A%2F%2Fas.example.com",
       "response_status": 200,
       "response_headers": {
         "Content-Type": "application/json"
       },
       "response_body": null,
-      "artifacts": [],
+      "artifacts": [
+        {
+          "type": "jwt",
+          "raw_input": "eyJ0eXAiOiJkcG9wK2p3dCIsImFsZyI6IkVTMjU2IiwiandrIjp7Imt0eSI6IkVDIiwieCI6IkVDX3B1Yl94IiwieSI6IkVDX3B1Yl95IiwiY3J2IjoiUC0yNTYifX0.eyJpc3MiOiJzcGlmZmU6Ly9vcGVuYWkuZXhhbXBsZS5jb20vY29kZXgvcG9kLWFiYzEyMyIsImF1ZCI6Imh0dHBzOi8vaXNzdWVyLm9wZW5haS5leGFtcGxlLmNvbSIsImlhdCI6MTc3MDAwMDAwNSwiZXhwIjoxNzcwMDAwMDY1LCJqdGkiOiJrZXktcHJvb2YtYWJjMTIzLTAwMSIsImh0bSI6IlBPU1QiLCJodHUiOiJodHRwczovL2lzc3Vlci5vcGVuYWkuZXhhbXBsZS5jb20vYXNzZXJ0In0",
+          "signing_key_hint": "Workload ephemeral EC private key \u2014 the key being proven; thumbprint will become cnf.jkt",
+          "final_output": "DPoP-style key proof tying this SVID exchange to the workload's EC private key",
+          "steps": [
+            {
+              "label": "1. Key Proof Header (DPoP-style PoP)",
+              "value": "{\n  \"typ\": \"dpop+jwt\",\n  \"alg\": \"ES256\",\n  \"jwk\": {\n    \"kty\": \"EC\",\n    \"x\": \"EC_pub_x\",\n    \"y\": \"EC_pub_y\",\n    \"crv\": \"P-256\"\n  }\n}\n\nWHY THIS PROOF IS REQUIRED \u2014 THE SPIRE LIMITATION:\nSPIRE's CredentialComposer is a server-side hook that composes\nJWT-SVID claims. It does NOT expose a mechanism for the workload\nto pass a public key into the SVID issuance request:\n\n  \u2717 ComposeWorkloadJWTSVID receives server-supplied attributes\n  \u2717 No documented API for the workload to inject cnf.jkt\n  \u2717 SPIRE Workload API returns a bare JWT-SVID with no cnf claim\n\nTherefore SPIRE CANNOT bind cnf.jkt to a workload-supplied\nephemeral key during SVID minting. The adapter must bridge this.\n\nWithout a key proof, SVID theft enables key substitution:\n  Attacker steals SVID \u2192 submits attacker's public_key\n  Adapter blindly trusts the claimed key \u2192 mints assertion\n  cnf.jkt now bound to ATTACKER's key, not the real workload's\n\nThe key proof prevents this: only the holder of the private key\ncorresponding to public_key can sign a valid proof.\n\nThe DPoP JWK in the JOSE header IS the public key being proven;\nthe proof JWT is signed by the corresponding private key."
+            },
+            {
+              "label": "2. Key Proof Payload",
+              "value": "{\n  \"iss\": \"spiffe://openai.example.com/codex/pod-abc123\",\n  \"aud\": \"https://issuer.openai.example.com\",\n  \"iat\": 1770000005,\n  \"exp\": 1770000065,\n  \"jti\": \"key-proof-abc123-001\",\n  \"htm\": \"POST\",\n  \"htu\": \"https://issuer.openai.example.com/assert\"\n}\n\niss  \u2014 workload SPIFFE ID (adapter MUST verify = SVID sub)\naud  \u2014 adapter URL (proof cannot be replayed at another service)\nhtm/htu \u2014 bind proof to this specific endpoint + method\njti  \u2014 unique; adapter MUST cache to reject replays\nexp  \u2014 short-lived (60s); limits replay window\n\nAdapter verification sequence:\n  1. Parse proof; extract jwk from JOSE header\n  2. Verify proof signature using extracted jwk   \u2190 KEY POSSESSION\n  3. Verify iss in proof = sub in SVID             \u2190 IDENTITY MATCH\n  4. Verify aud = adapter's own URL\n  5. Verify htm=POST, htu=/assert endpoint URI\n  6. Check jti replay cache\n  7. Validate SVID signature via SPIFFE trust bundle\n  8. Compute SHA-256(canonicalized jwk) \u2192 cnf.jkt value\n  9. Mint client-instance+jwt with verified cnf.jkt"
+            },
+            {
+              "label": "3. Why Not SPIRE CredentialComposer or Delegate API?",
+              "value": "SPIRE CredentialComposer \u2014 server-side plugin:\n  \u2717 Composes JWT-SVID from server-supplied attributes only\n  \u2717 No mechanism for workload to supply arbitrary inputs\n  \u2717 sub MUST remain the workload's SPIFFE ID (non-negotiable)\n  \u2717 Custom claims via CredentialComposer require server config,\n    not runtime workload input\n\nSPIRE Delegate API \u2014 authorized proxy for SPIRE calls:\n  \u2717 A delegate can call SPIRE on a workload's behalf\n  \u2717 But the delegate still gets a bare JWT-SVID with no cnf\n  \u2717 The delegate must OWN the key-binding logic externally\n  \u2713 The adapter in this flow IS the delegate pattern!\n\nBetter Architecture (from SPIRE/SPIFFE analysis):\n  SPIRE:    proves WHO the workload is (kernel-level attestation)\n  Adapter:  proves WHAT key the workload controls (DPoP PoP)\n  AS:       issues policy-scoped, sender-constrained OAuth tokens\n\nThis separation is correct. SPIRE does identity attestation;\nthe adapter does key binding. Do not try to push PoP into\nSPIRE \u2014 CredentialComposer is not designed for this and the\nworkload API does not support request-time key injection."
+            }
+          ]
+        }
+      ],
       "tokens": [],
-      "explanation": "The workload presents its JWT-SVID along with its EC public key (JWK) to the SPIFFE-OAuth Adapter (Instance Issuer). The workload generated this EC key pair at startup \u2014 it is the instance's DPoP key. The Issuer validates the SVID using the SPIFFE trust bundle, checks the SPIFFE ID against authorized patterns, then re-mints a client-instance+jwt that includes cnf.jkt and client_id.",
+      "explanation": "The workload presents its JWT-SVID plus a DPoP-style key proof to the SPIFFE-OAuth Adapter. The key proof is not optional: SPIRE's CredentialComposer cannot bind a workload-supplied public key into a JWT-SVID during issuance, so the adapter must independently verify the workload controls the private key before embedding cnf.jkt in the re-minted assertion. The proof uses the same DPoP-style structure (public key in JOSE header, signed by corresponding private key) as the later token endpoint proofs.",
       "annotations": [
-        "The workload's EC public key is provided here so the Issuer can embed its SHA-256 thumbprint as cnf.jkt in the re-minted assertion.",
-        "The workload holds the private half of this EC key pair and uses it to sign all DPoP proofs \u2014 this is the key-binding thread that runs through the entire chain.",
-        "The Issuer is a trusted intermediary: it knows which SPIFFE IDs are authorized to claim which client_ids. This authorization mapping is an operator configuration.",
-        "client_id and audience are explicit request parameters \u2014 the Issuer will only issue an assertion if the SPIFFE ID is authorized for that client_id."
+        "CRITICAL: key_proof is not optional. Without it, SVID theft enables key substitution \u2014 an attacker could bind their own public key as cnf.jkt in the re-minted assertion.",
+        "SPIRE LIMITATION: CredentialComposer cannot accept workload-provided public keys at SVID issuance time. This adapter pattern is what makes key binding possible outside SPIRE's minting path.",
+        "The key proof uses DPoP-style structure: jwk embedded in JOSE header, payload bound to this specific endpoint (htm/htu), signed by the workload's ephemeral private key.",
+        "The adapter MUST verify iss in the key proof equals sub in the SVID, ensuring the same workload identity is claiming both the SPIFFE credential and the key."
       ]
     },
     {
@@ -198,8 +219,8 @@
               "value": "{\n  \"iss\": \"https://issuer.openai.example.com\",    \u2190 OAuth HTTPS URL (not spiffe://)\n  \"sub\": \"spiffe://openai.example.com/codex/pod-abc123\",  \u2190 preserved from SVID\n  \"aud\": \"https://as.example.com\",              \u2190 OAuth AS (not the issuer)\n  \"client_id\": \"https://openai.example.com/codex\",  \u2190 ADDED (absent in raw SVID)\n  \"iat\": 1770000010,\n  \"nbf\": 1770000010,\n  \"exp\": 1770000310,\n  \"jti\": \"8f3e2a1b-9c4d\",                       \u2190 ADDED for replay prevention\n  \"cnf\": { \"jkt\": \"0ZcOCORZNYyOWyYiguA4I\" },   \u2190 ADDED (workload's DPoP key)\n  \"sub_profile\": \"client_instance\"              \u2190 ADDED\n}\n\nTHE THREE GAPS FILLED BY RE-MINTING:\n  1. client_id \u2014 maps SPIFFE ID to registered OAuth client\n  2. cnf.jkt  \u2014 binds the workload's DPoP EC key (from request)\n  3. typ      \u2014 changed to client-instance+jwt for AS type-safety\n\nSECURITY: The Issuer checked that\n  spiffe://openai.example.com/codex/pod-abc123\n  matches descriptor spiffe_id: spiffe://openai.example.com/codex/*\n  before authorizing client_id=https://openai.example.com/codex"
             },
             {
-              "label": "3. Key Chain: SPIRE CA \u2192 Issuer \u2192 Workload",
-              "value": "Three independent key pairs in this flow:\n\n1. SPIRE CA signing key (kid: spire-signing-key-abc123)\n   Signs the JWT-SVID\n   Verified using: SPIFFE trust bundle (SPIRE CA cert)\n   Scope: proves pod identity to SPIFFE-aware services\n\n2. Instance Issuer key (kid: 4vC8agycHu6rnkEEJYAH6VuCe4JoSkPV)\n   Signs the re-minted client-instance+jwt\n   Verified using: AS fetches Issuer's jwks_uri\n   Scope: OAuth token endpoint validation\n\n3. Workload EC key (JWK thumbprint: 0ZcOCORZNYyOWyYiguA4I)\n   NOT used for signing tokens \u2014 used for DPoP proofs\n   Verified using: JWK thumbprint comparison (cnf.jkt)\n   Scope: sender-constraint binding (step 5 \u2192 step 7)\n\nOnly key #3 follows the workload all the way to the RS."
+              "label": "3. Key Chain: SPIRE CA \u2192 Adapter \u2192 Workload EC Key",
+              "value": "Three independent key pairs in this flow:\n\n1. SPIRE CA signing key (kid: spire-signing-key-abc123)\n   Signs the JWT-SVID\n   Verified using: SPIFFE trust bundle (SPIRE CA cert)\n   Scope: proves pod identity to SPIFFE-aware services\n   NOTE: SPIRE CANNOT bind a workload key into this SVID.\n   CredentialComposer has no workload-supplied input mechanism.\n\n2. Instance Issuer key (kid: 4vC8agycHu6rnkEEJYAH6VuCe4JoSkPV)\n   Signs the re-minted client-instance+jwt\n   Verified using: AS fetches Issuer's jwks_uri\n   Scope: OAuth token endpoint validation\n   Trusted because it also verified the key_proof (step 3)\n   before embedding cnf.jkt \u2014 bridging the SPIRE gap.\n\n3. Workload EC key (JWK thumbprint: 0ZcOCORZNYyOWyYiguA4I)\n   Used to sign: key_proof (step 3) + DPoP proofs (steps 5, 7)\n   Verified using:\n     Adapter: key_proof signature \u2192 cnf.jkt computed\n     AS: DPoP JWK thumbprint = cnf.jkt in assertion\n     RS: DPoP JWK thumbprint = cnf.jkt in access token\n   Scope: the binding thread from adapter to RS\n\nOnly key #3 follows the workload all the way to the RS.\nKey #1 and #2 drop out after the adapter exchange."
             }
           ]
         }
@@ -232,12 +253,12 @@
         }
       ],
       "is_response": true,
-      "explanation": "The SPIFFE-OAuth Adapter re-mints the JWT-SVID as a proper client-instance+jwt. The critical transformation: client_id and cnf.jkt are added (absent from raw SVIDs), the typ is set correctly, and the token is signed by the Issuer's OAuth-registered key rather than the SPIRE CA. The AS can now process this token using standard Client Instance Assertion validation \u2014 no SPIFFE-awareness required.",
+      "explanation": "The SPIFFE-OAuth Adapter re-mints the JWT-SVID as a proper client-instance+jwt. Before signing, the adapter completed two independent verifications: (1) SVID signature against the SPIRE trust bundle \u2014 proving SPIFFE identity, and (2) the DPoP-style key proof signature using the workload's embedded public key \u2014 proving key possession. Only after both pass does the adapter embed the verified key thumbprint as cnf.jkt. This two-step verification is what SPIRE cannot do alone: SPIRE proves identity, the adapter proves key possession.",
       "annotations": [
         "\u00a77.3: The re-minted token has typ='client-instance+jwt'. The raw SVID had typ='JWT' \u2014 the AS would reject the raw SVID as an actor_token unless using \u00a78.8 SPIFFE compat mode.",
         "The Issuer's iss is an HTTPS URL registered in instance_issuers. SPIFFE iss URIs (spiffe://) are only used in raw SVID compat mode (\u00a78.8.2).",
-        "cnf.jkt binds the workload's own EC key \u2014 distinct from both the SPIRE CA key and the Issuer's signing key.",
-        "\u00a712.2: The sub (SPIFFE ID) is stable and unique per pod. When SPIRE rotates the SVID, the SPIFFE ID stays the same \u2014 only the signing changes."
+        "cnf.jkt was derived from the key proof's JWK thumbprint \u2014 the adapter verified proof signature before computing this value, ensuring only the real private key holder gets this binding.",
+        "\u00a712.2: The sub (SPIFFE ID) is stable and unique per pod. When SPIRE rotates the SVID, the SPIFFE ID stays the same \u2014 only the signing changes. The workload may also rotate its ephemeral key independently."
       ]
     },
     {
