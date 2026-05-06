@@ -1,0 +1,447 @@
+{
+  "id": "client-instance-assertion-spiffe-workload",
+  "title": "Client Instance Assertion \u2014 SPIFFE Workload (SPIRE \u2192 OAuth)",
+  "description": "A Kubernetes pod attested by SPIRE fetches a JWT-SVID from the SPIFFE Workload API, then exchanges it at a SPIFFE-OAuth adapter (Instance Issuer) to receive a re-minted client-instance+jwt. The re-minted assertion adds cnf.jkt (DPoP key binding), client_id, and the required typ \u2014 bridging SPIFFE workload identity into OAuth sender-constrained tokens.",
+  "rfc": "IETF Draft",
+  "category": "Client Instance Assertion",
+  "participants": [
+    {
+      "id": "workload",
+      "label": "Pod / Workload",
+      "type": "client"
+    },
+    {
+      "id": "spire",
+      "label": "SPIRE Agent",
+      "type": "kms"
+    },
+    {
+      "id": "issuer",
+      "label": "SPIFFE\u2192OAuth Adapter",
+      "type": "kms"
+    },
+    {
+      "id": "as",
+      "label": "Authorization Server",
+      "type": "idp"
+    },
+    {
+      "id": "rs",
+      "label": "Resource Server",
+      "type": "server"
+    }
+  ],
+  "steps": [
+    {
+      "step": 1,
+      "from": "workload",
+      "to": "spire",
+      "label": "FetchJWTSVID (Workload API)",
+      "method": "gRPC",
+      "url": "unix:///run/spire/sockets/agent.sock \u2192 SpiffeWorkloadAPI/FetchJWTSVID",
+      "request_headers": {
+        "Content-Type": "application/grpc+proto",
+        "x-spiffe-workload-api": "true"
+      },
+      "request_body": {
+        "audience": [
+          "https://issuer.openai.example.com"
+        ],
+        "spiffe_id": "spiffe://openai.example.com/codex/pod-abc123"
+      },
+      "response_status": 200,
+      "response_headers": {
+        "Content-Type": "application/grpc+proto"
+      },
+      "response_body": null,
+      "artifacts": [],
+      "tokens": [],
+      "explanation": "The pod calls the SPIFFE Workload API over a UNIX domain socket (no credentials needed \u2014 the SPIRE Agent attests the caller via kernel-level process inspection). It requests a JWT-SVID bound to the Instance Issuer's URL as audience. The SPIRE Agent contacts the SPIRE Server to fetch a valid SVID for this workload's SPIFFE ID.",
+      "annotations": [
+        "The SPIFFE Workload API is a gRPC API exposed by the SPIRE Agent over a UNIX domain socket (default: /run/spire/sockets/agent.sock).",
+        "Attestation is transparent \u2014 the SPIRE Agent authenticates the caller using OS-level signals (Linux namespaces, cgroups, pod UID). No credentials are passed in the request.",
+        "The audience list MUST match the Instance Issuer's identifier. Presenting this SVID to any other service will fail audience validation.",
+        "SPIRE issues SVIDs backed by the SPIRE Server's CA \u2014 the trust bundle (root CA certs) is what the Issuer uses to verify the SVID signature."
+      ]
+    },
+    {
+      "step": 2,
+      "from": "spire",
+      "to": "workload",
+      "label": "JWT-SVID Response",
+      "method": "gRPC",
+      "url": "unix:///run/spire/sockets/agent.sock \u2192 SpiffeWorkloadAPI/FetchJWTSVID",
+      "request_headers": {},
+      "request_body": null,
+      "response_status": 200,
+      "response_headers": {
+        "Content-Type": "application/grpc+proto"
+      },
+      "response_body": {
+        "svids": [
+          {
+            "spiffe_id": "spiffe://openai.example.com/codex/pod-abc123",
+            "svid": "eyJhbGciOiJFUzI1NiIsImtpZCI6InNwaXJlLXNpZ25pbmcta2V5LWFiYzEyMyIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzcGlmZmU6Ly9vcGVuYWkuZXhhbXBsZS5jb20iLCJzdWIiOiJzcGlmZmU6Ly9vcGVuYWkuZXhhbXBsZS5jb20vY29kZXgvcG9kLWFiYzEyMyIsImF1ZCI6WyJodHRwczovL2lzc3Vlci5vcGVuYWkuZXhhbXBsZS5jb20iXSwiaWF0IjoxNzcwMDAwMDAwLCJleHAiOjE3NzAwMDAzMDB9.SPIRE_SIG"
+          }
+        ]
+      },
+      "artifacts": [
+        {
+          "type": "jwt",
+          "raw_input": "eyJhbGciOiJFUzI1NiIsImtpZCI6InNwaXJlLXNpZ25pbmcta2V5LWFiYzEyMyIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzcGlmZmU6Ly9vcGVuYWkuZXhhbXBsZS5jb20iLCJzdWIiOiJzcGlmZmU6Ly9vcGVuYWkuZXhhbXBsZS5jb20vY29kZXgvcG9kLWFiYzEyMyIsImF1ZCI6WyJodHRwczovL2lzc3Vlci5vcGVuYWkuZXhhbXBsZS5jb20iXSwiaWF0IjoxNzcwMDAwMDAwLCJleHAiOjE3NzAwMDAzMDB9",
+          "signing_key_hint": "SPIRE Server CA signing key (kid: spire-signing-key-abc123) \u2014 not the workload's key",
+          "final_output": "ES256(SPIRE_CA_PrivateKey, Base64Url(Header) + '.' + Base64Url(Payload))",
+          "steps": [
+            {
+              "label": "1. JOSE Header",
+              "value": "{\n  \"alg\": \"ES256\",\n  \"kid\": \"spire-signing-key-abc123\",\n  \"typ\": \"JWT\"\n}\n\nCRITICAL: typ is plain 'JWT' \u2014 not 'client-instance+jwt'.\nThis is a raw SPIFFE JWT-SVID, NOT a Client Instance Assertion.\n\nThe Instance Issuer will:\n  1. Validate this SVID (SPIRE CA trust bundle)\n  2. Re-mint it as typ='client-instance+jwt'\n  3. Add cnf.jkt and client_id (absent from raw SVIDs)\n\nThe SPIRE Server's signing key is SEPARATE from the\nworkload's own EC key pair used for DPoP."
+            },
+            {
+              "label": "2. JWT-SVID Payload",
+              "value": "{\n  \"iss\": \"spiffe://openai.example.com\",\n  \"sub\": \"spiffe://openai.example.com/codex/pod-abc123\",\n  \"aud\": [\"https://issuer.openai.example.com\"],\n  \"iat\": 1770000000,\n  \"exp\": 1770000300\n}\n\niss  \u2014 SPIFFE trust domain URI (not an HTTPS URL)\nsub  \u2014 the workload's SPIFFE ID (unique within trust domain)\naud  \u2014 Instance Issuer URL; prevents replay at any other service\n\nNOTICE what is ABSENT in a raw JWT-SVID:\n  \u2717 No client_id  \u2014 SPIRE knows nothing about OAuth clients\n  \u2717 No cnf        \u2014 SPIRE signs with its own CA, not the workload key\n  \u2717 No sub_profile \u2014 SPIRE is not OAuth-aware\n  \u2717 No jti        \u2014 raw SVIDs may omit jti (\u00a78.8.1 replay exemption)\n  \u2717 No typ=client-instance+jwt\n\nThe Instance Issuer bridges these gaps in the next step."
+            },
+            {
+              "label": "3. SPIRE Trust Bundle Verification",
+              "value": "The Instance Issuer validates the SVID using:\n\n  SPIFFE Trust Bundle (from SPIRE Server):\n  {\n    \"trust_domain\": \"openai.example.com\",\n    \"jwt_authorities\": [\n      {\n        \"public_key_type\": \"EC\",\n        \"key\": \"<SPIRE Server CA public key>\",\n        \"key_id\": \"spire-signing-key-abc123\",\n        \"expires_at\": \"...\"\n      }\n    ]\n  }\n\nThe Issuer fetches this bundle from:\n  SPIRE: https://spire-server.openai.example.com/bundle\n  OR: via SPIFFE Federation (spiffe_bundle_endpoint)\n\nValidation checks:\n  1. alg \u2208 allowed algorithms (ES256) \u2713\n  2. kid matches a jwt_authorities entry \u2713\n  3. Signature verifies against CA public key \u2713\n  4. sub falls within trust_domain openai.example.com \u2713\n  5. sub satisfies spiffe_id pattern: spiffe://openai.example.com/codex/* \u2713\n  6. aud = issuer's own URL \u2713\n  7. exp not expired \u2713"
+            }
+          ]
+        }
+      ],
+      "tokens": [
+        {
+          "name": "SPIFFE JWT-SVID (raw)",
+          "typ": "JWT",
+          "raw": "eyJhbGciOiJFUzI1NiIsImtpZCI6InNwaXJlLXNpZ25pbmcta2V5LWFiYzEyMyIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzcGlmZmU6Ly9vcGVuYWkuZXhhbXBsZS5jb20iLCJzdWIiOiJzcGlmZmU6Ly9vcGVuYWkuZXhhbXBsZS5jb20vY29kZXgvcG9kLWFiYzEyMyIsImF1ZCI6WyJodHRwczovL2lzc3Vlci5vcGVuYWkuZXhhbXBsZS5jb20iXSwiaWF0IjoxNzcwMDAwMDAwLCJleHAiOjE3NzAwMDAzMDB9.SPIRE_SIG",
+          "header": {
+            "alg": "ES256",
+            "kid": "spire-signing-key-abc123",
+            "typ": "JWT"
+          },
+          "payload": {
+            "iss": "spiffe://openai.example.com",
+            "sub": "spiffe://openai.example.com/codex/pod-abc123",
+            "aud": [
+              "https://issuer.openai.example.com"
+            ],
+            "iat": 1770000000,
+            "exp": 1770000300
+          },
+          "signature_b64": "SPIRE_SIG"
+        }
+      ],
+      "is_response": true,
+      "explanation": "The SPIRE Agent returns a short-lived JWT-SVID signed by the SPIRE Server's CA. This is a raw SPIFFE credential \u2014 it proves the workload's SPIFFE ID but carries none of the OAuth claims (client_id, cnf.jkt, sub_profile) required by the Client Instance Assertion spec. The next step bridges SPIFFE identity into the OAuth world.",
+      "annotations": [
+        "SPIFFE JWT-SVIDs use typ='JWT', NOT 'client-instance+jwt'. They cannot be used directly as actor_token without SPIFFE compat mode (\u00a78.8).",
+        "The SVID is signed by the SPIRE Server's CA \u2014 a completely different key from the workload's own EC key pair used for DPoP.",
+        "SPIRE SVIDs typically have short TTLs (300\u20133600 seconds) and are automatically rotated by the SPIRE Agent.",
+        "\u00a78.8.1: Raw JWT-SVIDs CAN be used directly as actor_token if the descriptor uses spiffe_bundle_endpoint and no client_id claim is needed. This scenario shows the more common re-minting path."
+      ]
+    },
+    {
+      "step": 3,
+      "from": "workload",
+      "to": "issuer",
+      "label": "POST /assert (SVID exchange)",
+      "method": "POST",
+      "url": "https://issuer.openai.example.com/assert",
+      "request_headers": {
+        "Content-Type": "application/x-www-form-urlencoded",
+        "Host": "issuer.openai.example.com"
+      },
+      "request_body": "svid=eyJhbGciOiJFUzI1NiIs...SPIRE_SIG&public_key=%7B%22kty%22%3A%22EC%22%2C%22crv%22%3A%22P-256%22%2C%22x%22%3A%22EC_pub_x%22%2C%22y%22%3A%22EC_pub_y%22%7D&client_id=https%3A%2F%2Fopenai.example.com%2Fcodex&audience=https%3A%2F%2Fas.example.com",
+      "response_status": 200,
+      "response_headers": {
+        "Content-Type": "application/json"
+      },
+      "response_body": null,
+      "artifacts": [],
+      "tokens": [],
+      "explanation": "The workload presents its JWT-SVID along with its EC public key (JWK) to the SPIFFE-OAuth Adapter (Instance Issuer). The workload generated this EC key pair at startup \u2014 it is the instance's DPoP key. The Issuer validates the SVID using the SPIFFE trust bundle, checks the SPIFFE ID against authorized patterns, then re-mints a client-instance+jwt that includes cnf.jkt and client_id.",
+      "annotations": [
+        "The workload's EC public key is provided here so the Issuer can embed its SHA-256 thumbprint as cnf.jkt in the re-minted assertion.",
+        "The workload holds the private half of this EC key pair and uses it to sign all DPoP proofs \u2014 this is the key-binding thread that runs through the entire chain.",
+        "The Issuer is a trusted intermediary: it knows which SPIFFE IDs are authorized to claim which client_ids. This authorization mapping is an operator configuration.",
+        "client_id and audience are explicit request parameters \u2014 the Issuer will only issue an assertion if the SPIFFE ID is authorized for that client_id."
+      ]
+    },
+    {
+      "step": 4,
+      "from": "issuer",
+      "to": "workload",
+      "label": "client-instance+jwt",
+      "method": "POST",
+      "url": "https://issuer.openai.example.com/assert",
+      "request_headers": {},
+      "request_body": null,
+      "response_status": 200,
+      "response_headers": {
+        "Content-Type": "application/json"
+      },
+      "response_body": {
+        "token_type": "client-instance+jwt",
+        "assertion": "eyJhbGciOiJFUzI1NiIsImtpZCI6IjR2QzhhZ3ljSHU2cm5rRUVKWUFINlZ1Q2U0Sm9Ta1BWIiwidHlwIjoiY2xpZW50LWluc3RhbmNlK2p3dCJ9.eyJpc3MiOiJodHRwczovL2lzc3Vlci5vcGVuYWkuZXhhbXBsZS5jb20iLCJzdWIiOiJzcGlmZmU6Ly9vcGVuYWkuZXhhbXBsZS5jb20vY29kZXgvcG9kLWFiYzEyMyIsImF1ZCI6Imh0dHBzOi8vYXMuZXhhbXBsZS5jb20iLCJjbGllbnRfaWQiOiJodHRwczovL29wZW5haS5leGFtcGxlLmNvbS9jb2RleCIsImlhdCI6MTc3MDAwMDAxMCwibmJmIjoxNzcwMDAwMDEwLCJleHAiOjE3NzAwMDAzMTAsImp0aSI6IjhmM2UyYTFiLTljNGQiLCJjbmYiOnsiamt0IjoiMFpjT0NPUlpOWXlPV3lZaWd1QTRJIn0sInN1Yl9wcm9maWxlIjoiY2xpZW50X2luc3RhbmNlIn0.ISSUER_SIG"
+      },
+      "artifacts": [
+        {
+          "type": "jwt",
+          "raw_input": "eyJhbGciOiJFUzI1NiIsImtpZCI6IjR2QzhhZ3ljSHU2cm5rRUVKWUFINlZ1Q2U0Sm9Ta1BWIiwidHlwIjoiY2xpZW50LWluc3RhbmNlK2p3dCJ9.eyJpc3MiOiJodHRwczovL2lzc3Vlci5vcGVuYWkuZXhhbXBsZS5jb20iLCJzdWIiOiJzcGlmZmU6Ly9vcGVuYWkuZXhhbXBsZS5jb20vY29kZXgvcG9kLWFiYzEyMyIsImF1ZCI6Imh0dHBzOi8vYXMuZXhhbXBsZS5jb20iLCJjbGllbnRfaWQiOiJodHRwczovL29wZW5haS5leGFtcGxlLmNvbS9jb2RleCIsImlhdCI6MTc3MDAwMDAxMCwibmJmIjoxNzcwMDAwMDEwLCJleHAiOjE3NzAwMDAzMTAsImp0aSI6IjhmM2UyYTFiLTljNGQiLCJjbmYiOnsiamt0IjoiMFpjT0NPUlpOWXlPV3lZaWd1QTRJIn0sInN1Yl9wcm9maWxlIjoiY2xpZW50X2luc3RhbmNlIn0",
+          "signing_key_hint": "Instance Issuer ES256 key (kid: 4vC8agycHu6rnkEEJYAH6VuCe4JoSkPV) \u2014 NOT the SPIRE CA key",
+          "final_output": "ES256(IssuerPrivateKey, Base64Url(Header) + '.' + Base64Url(Payload))",
+          "steps": [
+            {
+              "label": "1. JOSE Header (Re-minted)",
+              "value": "{\n  \"alg\": \"ES256\",\n  \"kid\": \"4vC8agycHu6rnkEEJYAH6VuCe4JoSkPV\",\n  \"typ\": \"client-instance+jwt\"\n}\n\nKEY TRANSFORMATION: typ changed from 'JWT' \u2192 'client-instance+jwt'\n\nThis is NOT the SPIRE CA key. The Issuer signs with its own\nOAuth-registered key. The AS verifies using the Issuer's jwks_uri,\nnot the SPIRE trust bundle.\n\nClient metadata descriptor:\n{\n  \"issuer\": \"https://issuer.openai.example.com\",\n  \"jwks_uri\": \"https://issuer.openai.example.com/jwks.json\",  \u2190 Issuer's key\n  \"subject_syntax\": \"spiffe\",\n  \"trust_domain\": \"openai.example.com\",\n  \"spiffe_id\": \"spiffe://openai.example.com/codex/*\",\n  \"signing_alg_values_supported\": [\"ES256\"]\n}"
+            },
+            {
+              "label": "2. Re-minted Payload (gaps filled)",
+              "value": "{\n  \"iss\": \"https://issuer.openai.example.com\",    \u2190 OAuth HTTPS URL (not spiffe://)\n  \"sub\": \"spiffe://openai.example.com/codex/pod-abc123\",  \u2190 preserved from SVID\n  \"aud\": \"https://as.example.com\",              \u2190 OAuth AS (not the issuer)\n  \"client_id\": \"https://openai.example.com/codex\",  \u2190 ADDED (absent in raw SVID)\n  \"iat\": 1770000010,\n  \"nbf\": 1770000010,\n  \"exp\": 1770000310,\n  \"jti\": \"8f3e2a1b-9c4d\",                       \u2190 ADDED for replay prevention\n  \"cnf\": { \"jkt\": \"0ZcOCORZNYyOWyYiguA4I\" },   \u2190 ADDED (workload's DPoP key)\n  \"sub_profile\": \"client_instance\"              \u2190 ADDED\n}\n\nTHE THREE GAPS FILLED BY RE-MINTING:\n  1. client_id \u2014 maps SPIFFE ID to registered OAuth client\n  2. cnf.jkt  \u2014 binds the workload's DPoP EC key (from request)\n  3. typ      \u2014 changed to client-instance+jwt for AS type-safety\n\nSECURITY: The Issuer checked that\n  spiffe://openai.example.com/codex/pod-abc123\n  matches descriptor spiffe_id: spiffe://openai.example.com/codex/*\n  before authorizing client_id=https://openai.example.com/codex"
+            },
+            {
+              "label": "3. Key Chain: SPIRE CA \u2192 Issuer \u2192 Workload",
+              "value": "Three independent key pairs in this flow:\n\n1. SPIRE CA signing key (kid: spire-signing-key-abc123)\n   Signs the JWT-SVID\n   Verified using: SPIFFE trust bundle (SPIRE CA cert)\n   Scope: proves pod identity to SPIFFE-aware services\n\n2. Instance Issuer key (kid: 4vC8agycHu6rnkEEJYAH6VuCe4JoSkPV)\n   Signs the re-minted client-instance+jwt\n   Verified using: AS fetches Issuer's jwks_uri\n   Scope: OAuth token endpoint validation\n\n3. Workload EC key (JWK thumbprint: 0ZcOCORZNYyOWyYiguA4I)\n   NOT used for signing tokens \u2014 used for DPoP proofs\n   Verified using: JWK thumbprint comparison (cnf.jkt)\n   Scope: sender-constraint binding (step 5 \u2192 step 7)\n\nOnly key #3 follows the workload all the way to the RS."
+            }
+          ]
+        }
+      ],
+      "tokens": [
+        {
+          "name": "Client Instance Assertion (Re-minted from SVID)",
+          "typ": "client-instance+jwt",
+          "raw": "eyJhbGciOiJFUzI1NiIsImtpZCI6IjR2QzhhZ3ljSHU2cm5rRUVKWUFINlZ1Q2U0Sm9Ta1BWIiwidHlwIjoiY2xpZW50LWluc3RhbmNlK2p3dCJ9.eyJpc3MiOiJodHRwczovL2lzc3Vlci5vcGVuYWkuZXhhbXBsZS5jb20iLCJzdWIiOiJzcGlmZmU6Ly9vcGVuYWkuZXhhbXBsZS5jb20vY29kZXgvcG9kLWFiYzEyMyIsImF1ZCI6Imh0dHBzOi8vYXMuZXhhbXBsZS5jb20iLCJjbGllbnRfaWQiOiJodHRwczovL29wZW5haS5leGFtcGxlLmNvbS9jb2RleCIsImlhdCI6MTc3MDAwMDAxMCwibmJmIjoxNzcwMDAwMDEwLCJleHAiOjE3NzAwMDAzMTAsImp0aSI6IjhmM2UyYTFiLTljNGQiLCJjbmYiOnsiamt0IjoiMFpjT0NPUlpOWXlPV3lZaWd1QTRJIn0sInN1Yl9wcm9maWxlIjoiY2xpZW50X2luc3RhbmNlIn0.ISSUER_SIG",
+          "header": {
+            "alg": "ES256",
+            "kid": "4vC8agycHu6rnkEEJYAH6VuCe4JoSkPV",
+            "typ": "client-instance+jwt"
+          },
+          "payload": {
+            "iss": "https://issuer.openai.example.com",
+            "sub": "spiffe://openai.example.com/codex/pod-abc123",
+            "aud": "https://as.example.com",
+            "client_id": "https://openai.example.com/codex",
+            "iat": 1770000010,
+            "nbf": 1770000010,
+            "exp": 1770000310,
+            "jti": "8f3e2a1b-9c4d",
+            "cnf": {
+              "jkt": "0ZcOCORZNYyOWyYiguA4I"
+            },
+            "sub_profile": "client_instance"
+          },
+          "signature_b64": "ISSUER_SIG"
+        }
+      ],
+      "is_response": true,
+      "explanation": "The SPIFFE-OAuth Adapter re-mints the JWT-SVID as a proper client-instance+jwt. The critical transformation: client_id and cnf.jkt are added (absent from raw SVIDs), the typ is set correctly, and the token is signed by the Issuer's OAuth-registered key rather than the SPIRE CA. The AS can now process this token using standard Client Instance Assertion validation \u2014 no SPIFFE-awareness required.",
+      "annotations": [
+        "\u00a77.3: The re-minted token has typ='client-instance+jwt'. The raw SVID had typ='JWT' \u2014 the AS would reject the raw SVID as an actor_token unless using \u00a78.8 SPIFFE compat mode.",
+        "The Issuer's iss is an HTTPS URL registered in instance_issuers. SPIFFE iss URIs (spiffe://) are only used in raw SVID compat mode (\u00a78.8.2).",
+        "cnf.jkt binds the workload's own EC key \u2014 distinct from both the SPIRE CA key and the Issuer's signing key.",
+        "\u00a712.2: The sub (SPIFFE ID) is stable and unique per pod. When SPIRE rotates the SVID, the SPIFFE ID stays the same \u2014 only the signing changes."
+      ]
+    },
+    {
+      "step": 5,
+      "from": "workload",
+      "to": "as",
+      "label": "POST /token (client_creds)",
+      "method": "POST",
+      "url": "https://as.example.com/token",
+      "request_headers": {
+        "Content-Type": "application/x-www-form-urlencoded",
+        "Host": "as.example.com",
+        "DPoP": "eyJ0eXAiOiJkcG9wK2p3dCIsImFsZyI6IkVTMjU2IiwiandrIjp7Imt0eSI6IkVDIiwieCI6IkVDX3B1Yl94IiwieSI6IkVDX3B1Yl95IiwiY3J2IjoiUC0yNTYifX0.eyJqdGkiOiJkcG9wLXNwaWZmZS0wMDEiLCJodG0iOiJQT1NUIiwiaHR1IjoiaHR0cHM6Ly9hcy5leGFtcGxlLmNvbS90b2tlbiIsImlhdCI6MTc3MDAwMDAxNX0.DPoP_SPIFFE_Sig"
+      },
+      "request_body": "grant_type=client_credentials&scope=repo.write&client_id=https%3A%2F%2Fopenai.example.com%2Fcodex&actor_token=eyJhbGciOiJFUzI1NiIs...ISSUER_SIG&actor_token_type=urn%3Aietf%3Aparams%3Aoauth%3Atoken-type%3Aclient-instance-jwt",
+      "response_status": 200,
+      "response_headers": {
+        "Content-Type": "application/json"
+      },
+      "response_body": null,
+      "artifacts": [
+        {
+          "type": "jwt",
+          "raw_input": "eyJ0eXAiOiJkcG9wK2p3dCIsImFsZyI6IkVTMjU2IiwiandrIjp7Imt0eSI6IkVDIiwieCI6IkVDX3B1Yl94IiwieSI6IkVDX3B1Yl95IiwiY3J2IjoiUC0yNTYifX0.eyJqdGkiOiJkcG9wLXNwaWZmZS0wMDEiLCJodG0iOiJQT1NUIiwiaHR1IjoiaHR0cHM6Ly9hcy5leGFtcGxlLmNvbS90b2tlbiIsImlhdCI6MTc3MDAwMDAxNX0",
+          "signing_key_hint": "Workload EC private key \u2014 the key whose thumbprint is cnf.jkt in the assertion",
+          "final_output": "DPoP proof tying the token request to the workload's EC key",
+          "steps": [
+            {
+              "label": "1. DPoP Proof Header",
+              "value": "{\n  \"typ\": \"dpop+jwt\",\n  \"alg\": \"ES256\",\n  \"jwk\": {\n    \"kty\": \"EC\",\n    \"x\": \"EC_pub_x\",\n    \"y\": \"EC_pub_y\",\n    \"crv\": \"P-256\"\n  }\n}\n\nThe jwk embeds the workload's public key inline.\nSHA-256 thumbprint of this JWK = 0ZcOCORZNYyOWyYiguA4I\n\nThe AS computes: SHA-256(canonicalized JWK) and verifies\nit equals the cnf.jkt in the actor_token.\nThis proves: the party presenting the assertion also controls\nthe private key \u2014 not just a replay of a stolen assertion."
+            },
+            {
+              "label": "2. Full Token Request",
+              "value": "grant_type=client_credentials\n&scope=repo.write\n&client_id=https://openai.example.com/codex\n&actor_token=<Re-minted client-instance+jwt from step 4>\n&actor_token_type=\n  urn:ietf:params:oauth:token-type:client-instance-jwt\n\nDPoP: <proof in header \u2014 workload EC key matching cnf.jkt>\n\nAS Validation (\u00a78.2 for client_instance_jwt auth):\n  1. Read actor_token iss = https://issuer.openai.example.com\n  2. Look up descriptor in client metadata instance_issuers\n  3. Fetch jwks_uri = https://issuer.openai.example.com/jwks.json\n  4. Verify ES256 sig on client-instance+jwt \u2713\n  5. Validate typ='client-instance+jwt' \u2713\n  6. Validate sub \u2208 trust_domain openai.example.com \u2713\n  7. Validate sub satisfies spiffe_id pattern \u2713\n  8. Verify client_id in assertion = client_id in request \u2713\n  9. Check (iss, jti) replay cache: 8f3e2a1b-9c4d not seen \u2713\n  10. Verify DPoP JWK thumbprint = cnf.jkt \u2713\n  11. \u00a78.6.1: client_credentials \u2192 SELF-ACTING case"
+            }
+          ]
+        }
+      ],
+      "tokens": [],
+      "explanation": "The workload presents the re-minted client-instance+jwt as its actor_token. Using the client_instance_jwt auth method, no separate client_assertion is needed. The DPoP proof uses the same EC private key whose public key thumbprint is embedded as cnf.jkt in the assertion \u2014 the AS verifies this linkage to prevent assertion replay.",
+      "annotations": [
+        "\u00a78.3.1: client_instance_jwt auth method \u2014 actor_token serves as both client authentication and instance identification.",
+        "\u00a78.5: AS MUST verify DPoP JWK thumbprint = cnf.jkt in assertion. MUST NOT issue bearer token.",
+        "\u00a78.2 Step 6: AS checks sub against descriptor's trust_domain and spiffe_id constraints from client metadata.",
+        "actor_token_type = urn:ietf:params:oauth:token-type:client-instance-jwt"
+      ]
+    },
+    {
+      "step": 6,
+      "from": "as",
+      "to": "workload",
+      "label": "200 OK + Access Token",
+      "method": "POST",
+      "url": "https://as.example.com/token",
+      "request_headers": {},
+      "request_body": null,
+      "response_status": 200,
+      "response_headers": {
+        "Content-Type": "application/json",
+        "Cache-Control": "no-store"
+      },
+      "response_body": {
+        "access_token": "eyJ0eXAiOiJhdCtqd3QiLCJhbGciOiJFUzI1NiJ9.eyJpc3MiOiJodHRwczovL2FzLmV4YW1wbGUuY29tIiwiYXVkIjoiaHR0cHM6Ly9hcGkuZXhhbXBsZS5jb20iLCJzdWIiOiJzcGlmZmU6Ly9vcGVuYWkuZXhhbXBsZS5jb20vY29kZXgvcG9kLWFiYzEyMyIsInN1Yl9wcm9maWxlIjoiY2xpZW50X2luc3RhbmNlIiwiY2xpZW50X2lkIjoiaHR0cHM6Ly9vcGVuYWkuZXhhbXBsZS5jb20vY29kZXgiLCJzY29wZSI6InJlcG8ud3JpdGUiLCJjbmYiOnsiamt0IjoiMFpjT0NPUlpOWXlPV3lZaWd1QTRJIn0sImlhdCI6MTc3MDAwMDAyMCwiZXhwIjoxNzcwMDAzNjAwfQ.AS_SIG",
+        "token_type": "DPoP",
+        "expires_in": 3600,
+        "scope": "repo.write"
+      },
+      "artifacts": [
+        {
+          "type": "jwt",
+          "raw_input": "eyJ0eXAiOiJhdCtqd3QiLCJhbGciOiJFUzI1NiJ9.eyJpc3MiOiJodHRwczovL2FzLmV4YW1wbGUuY29tIiwiYXVkIjoiaHR0cHM6Ly9hcGkuZXhhbXBsZS5jb20iLCJzdWIiOiJzcGlmZmU6Ly9vcGVuYWkuZXhhbXBsZS5jb20vY29kZXgvcG9kLWFiYzEyMyIsInN1Yl9wcm9maWxlIjoiY2xpZW50X2luc3RhbmNlIiwiY2xpZW50X2lkIjoiaHR0cHM6Ly9vcGVuYWkuZXhhbXBsZS5jb20vY29kZXgiLCJzY29wZSI6InJlcG8ud3JpdGUiLCJjbmYiOnsiamt0IjoiMFpjT0NPUlpOWXlPV3lZaWd1QTRJIn0sImlhdCI6MTc3MDAwMDAyMCwiZXhwIjoxNzcwMDAzNjAwfQ",
+          "signing_key_hint": "Authorization Server ES256 Signing Key",
+          "final_output": "DPoP-bound Access Token (SPIFFE ID as sub, self-acting)",
+          "steps": [
+            {
+              "label": "1. Access Token (Self-Acting, \u00a78.6.3)",
+              "value": "{\n  \"iss\": \"https://as.example.com\",\n  \"aud\": \"https://api.example.com\",\n  \"sub\": \"spiffe://openai.example.com/codex/pod-abc123\",\n  \"sub_profile\": \"client_instance\",\n  \"client_id\": \"https://openai.example.com/codex\",\n  \"scope\": \"repo.write\",\n  \"cnf\": { \"jkt\": \"0ZcOCORZNYyOWyYiguA4I\" },\n  \"iat\": 1770000020,\n  \"exp\": 1770003600\n}\n\nSPIFFE ID survives into the access token as sub:\n  spiffe://openai.example.com/codex/pod-abc123\n\nResource servers can use this SPIFFE ID for:\n  \u2022 Workload-to-workload authorization policy\n  \u2022 Audit logging (which specific pod made the request)\n  \u2022 SPIRE-aware policy engines (OPA, Envoy RBAC)"
+            },
+            {
+              "label": "2. Full Key Binding Chain",
+              "value": "End-to-end key binding across all 4 tokens:\n\n  SPIFFE JWT-SVID (step 2)\n  \u2514\u2500 signed by: SPIRE CA (spire-signing-key-abc123)\n  \u2514\u2500 proves: pod identity to SPIFFE ecosystem\n\n  Re-minted client-instance+jwt (step 4)\n  \u2514\u2500 signed by: Instance Issuer (4vC8agycHu6rnk...)\n  \u2514\u2500 cnf.jkt = 0ZcOCORZNYy... (workload EC key)\n\n  DPoP proof at /token (step 5)\n  \u2514\u2500 signed by: Workload EC key\n  \u2514\u2500 JWK thumbprint = cnf.jkt \u2713 (AS verified)\n\n  Access token (this step)\n  \u2514\u2500 signed by: AS (HTTPS RS256/ES256)\n  \u2514\u2500 cnf.jkt = 0ZcOCORZNYy... (same workload key)\n\n  DPoP proof at /api/repos (step 7)\n  \u2514\u2500 signed by: Workload EC key\n  \u2514\u2500 JWK thumbprint = cnf.jkt in access token \u2713 (RS verified)\n\nThe workload's EC key is the red thread binding all 5 steps.\nThe SPIRE CA key and Issuer key drop out after step 4."
+            }
+          ]
+        }
+      ],
+      "tokens": [
+        {
+          "name": "Access Token (SPIFFE sub, Self-Acting)",
+          "typ": "at+jwt",
+          "raw": "eyJ0eXAiOiJhdCtqd3QiLCJhbGciOiJFUzI1NiJ9.eyJpc3MiOiJodHRwczovL2FzLmV4YW1wbGUuY29tIiwiYXVkIjoiaHR0cHM6Ly9hcGkuZXhhbXBsZS5jb20iLCJzdWIiOiJzcGlmZmU6Ly9vcGVuYWkuZXhhbXBsZS5jb20vY29kZXgvcG9kLWFiYzEyMyIsInN1Yl9wcm9maWxlIjoiY2xpZW50X2luc3RhbmNlIiwiY2xpZW50X2lkIjoiaHR0cHM6Ly9vcGVuYWkuZXhhbXBsZS5jb20vY29kZXgiLCJzY29wZSI6InJlcG8ud3JpdGUiLCJjbmYiOnsiamt0IjoiMFpjT0NPUlpOWXlPV3lZaWd1QTRJIn0sImlhdCI6MTc3MDAwMDAyMCwiZXhwIjoxNzcwMDAzNjAwfQ.AS_SIG",
+          "header": {
+            "typ": "at+jwt",
+            "alg": "ES256"
+          },
+          "payload": {
+            "iss": "https://as.example.com",
+            "aud": "https://api.example.com",
+            "sub": "spiffe://openai.example.com/codex/pod-abc123",
+            "sub_profile": "client_instance",
+            "client_id": "https://openai.example.com/codex",
+            "scope": "repo.write",
+            "cnf": {
+              "jkt": "0ZcOCORZNYyOWyYiguA4I"
+            },
+            "iat": 1770000020,
+            "exp": 1770003600
+          },
+          "signature_b64": "AS_SIG"
+        }
+      ],
+      "is_response": true,
+      "explanation": "The AS issues a DPoP-bound access token with the SPIFFE ID as sub. The SPIFFE ID is now a first-class OAuth principal \u2014 resource servers can use it for SPIFFE-aware policy without any knowledge of SPIRE or the trust bundle. The workload's EC key is bound via cnf.jkt, completing the sender-constraint chain.",
+      "annotations": [
+        "\u00a78.6.3: Self-acting case \u2014 sub = actor_token's sub (the SPIFFE ID). act MUST be omitted.",
+        "\u00a79.1: RS sees sub_profile='client_instance' \u2014 applies workload-class policy, not user-scoped policy.",
+        "The SPIFFE ID in sub is stable across SVID rotations. Token revocation by SPIFFE ID (\u00a710.1) is meaningful for this reason.",
+        "\u00a78.5: token_type='DPoP'. The RS must verify DPoP proof on every request \u2014 the access token alone is insufficient without the workload's private key."
+      ]
+    },
+    {
+      "step": 7,
+      "from": "workload",
+      "to": "rs",
+      "label": "GET /api/repos (DPoP-bound)",
+      "method": "GET",
+      "url": "https://api.example.com/api/repos",
+      "request_headers": {
+        "Authorization": "DPoP eyJ0eXAiOiJhdCtqd3QiLCJhbGciOiJFUzI1NiJ9...AS_SIG",
+        "DPoP": "eyJ0eXAiOiJkcG9wK2p3dCIsImFsZyI6IkVTMjU2IiwiandrIjp7Imt0eSI6IkVDIiwieCI6IkVDX3B1Yl94IiwieSI6IkVDX3B1Yl95IiwiY3J2IjoiUC0yNTYifX0.eyJqdGkiOiJkcG9wLXNwaWZmZS0wMDIiLCJodG0iOiJHRVQiLCJodHUiOiJodHRwczovL2FwaS5leGFtcGxlLmNvbS9hcGkvcmVwb3MiLCJpYXQiOjE3NzAwMDA1MDAsImF0aCI6IkhVMXdBRXUyOHdNRGNhSkl5UWxWMVhpNk83aktMZVRwckJydllmQnRGbG8ifQ.DPoP_RS_Sig",
+        "Host": "api.example.com"
+      },
+      "request_body": null,
+      "response_status": 200,
+      "response_headers": {
+        "Content-Type": "application/json"
+      },
+      "response_body": null,
+      "artifacts": [
+        {
+          "type": "jwt",
+          "raw_input": "eyJ0eXAiOiJkcG9wK2p3dCIsImFsZyI6IkVTMjU2IiwiandrIjp7Imt0eSI6IkVDIiwieCI6IkVDX3B1Yl94IiwieSI6IkVDX3B1Yl95IiwiY3J2IjoiUC0yNTYifX0.eyJqdGkiOiJkcG9wLXNwaWZmZS0wMDIiLCJodG0iOiJHRVQiLCJodHUiOiJodHRwczovL2FwaS5leGFtcGxlLmNvbS9hcGkvcmVwb3MiLCJpYXQiOjE3NzAwMDA1MDAsImF0aCI6IkhVMXdBRXUyOHdNRGNhSkl5UWxWMVhpNk83aktMZVRwckJydllmQnRGbG8ifQ",
+          "signing_key_hint": "Workload EC private key (same key as step 5; jwk thumbprint = cnf.jkt in access token)",
+          "final_output": "DPoP proof for GET /api/repos \u2014 binds this specific request to the workload EC key",
+          "steps": [
+            {
+              "label": "1. DPoP Proof Header (RFC 9449 \u00a74.2)",
+              "value": "{\n  \"typ\": \"dpop+jwt\",\n  \"alg\": \"ES256\",\n  \"jwk\": {\n    \"kty\": \"EC\",\n    \"x\": \"EC_pub_x\",\n    \"y\": \"EC_pub_y\",\n    \"crv\": \"P-256\"\n  }\n}\n\nThe jwk MUST appear in the JOSE header (not the payload).\nThis is the workload's public key \u2014 the RS extracts it\nto verify the proof signature.\n\nRS then checks:\n  SHA-256(canonicalized jwk) == cnf.jkt in access token\n  i.e. 0ZcOCORZNYyOWyYiguA4I == 0ZcOCORZNYyOWyYiguA4I \u2713\n\nThis proves the presenter holds the private key bound\nto the access token \u2014 not a replay of a stolen token."
+            },
+            {
+              "label": "2. DPoP Proof Payload (RS-side, RFC 9449 \u00a74.3)",
+              "value": "{\n  \"jti\": \"dpop-spiffe-002\",\n  \"htm\": \"GET\",\n  \"htu\": \"https://api.example.com/api/repos\",\n  \"iat\": 1770000500,\n  \"ath\": \"HU1wAEu28wMDcaJIyQlV1Xi6O7jKLeTprBrvYfBtFlo\"\n}\n\njti  \u2014 unique per proof; RS caches to reject replays\nhtm  \u2014 HTTP method (GET); RS rejects if it doesn't match\nhtu  \u2014 request URI; RS rejects if it doesn't match\niat  \u2014 issued recently; RS rejects if too old (\u00a711.1)\nath  \u2014 BASE64URL(SHA-256(access_token_string)) \u2190 REQUIRED at RS\n\nath binds this DPoP proof to exactly this access token.\nWithout ath, a stolen proof could be replayed with a\ndifferent access token. RFC 9449 \u00a74.3: ath MUST be\npresent when the DPoP proof is used at a RS.\n\nNOTE: ath was NOT included at the token endpoint (step 5)\nbecause no access token existed yet at that point."
+            },
+            {
+              "label": "3. RS Validation Steps (RFC 9449 \u00a77.1)",
+              "value": "The RS validates the DPoP proof as follows:\n\n  1. Parse DPoP header from JOSE header (not payload)\n  2. Verify typ = \"dpop+jwt\" \u2713\n  3. Verify alg \u2208 supported algorithms \u2713\n  4. Extract jwk from JOSE header \u2713\n  5. Verify proof signature using extracted jwk \u2713\n  6. Verify htm = request HTTP method (GET) \u2713\n  7. Verify htu = request URI \u2713\n  8. Verify iat is recent (within allowed drift) \u2713\n  9. Check jti not in replay cache \u2192 add to cache \u2713\n  10. Compute SHA-256(access_token) \u2192 BASE64URL encode\n      = HU1wAEu28wMDcaJIyQlV1Xi6O7jKLeTprBrvYfBtFlo\n      Compare to ath in proof \u2713\n  11. Compute SHA-256(canonicalized jwk from proof)\n      = 0ZcOCORZNYyOWyYiguA4I\n      Compare to cnf.jkt in access token \u2713\n\nAll checks pass \u2192 request authorized as:\n  sub: spiffe://openai.example.com/codex/pod-abc123\n  scope: repo.write"
+            }
+          ]
+        }
+      ],
+      "tokens": [],
+      "explanation": "The workload calls the resource server with its DPoP-bound access token. The RS validates the access token and DPoP proof without any knowledge of SPIRE \u2014 it sees only a standard OAuth access token with a SPIFFE-format sub. The RS can use sub_profile='client_instance' to apply workload-specific authorization policy.",
+      "annotations": [
+        "The RS has no SPIRE dependency \u2014 it sees a standard at+jwt. The SPIFFE identity is just a string in the sub claim.",
+        "\u00a79.1: RS evaluates sub_profile='client_instance' to determine this is a workload (not a user) and applies appropriate policy.",
+        "DPoP proof binds ath (access token hash) to prevent the proof from being reused with a different token.",
+        "The workload's EC key has been the constant sender-constraint anchor from step 3 (SVID exchange) all the way to this RS call."
+      ]
+    },
+    {
+      "step": 8,
+      "from": "rs",
+      "to": "workload",
+      "label": "200 OK + Resource",
+      "method": "GET",
+      "url": "https://api.example.com/api/repos",
+      "request_headers": {},
+      "request_body": null,
+      "response_status": 200,
+      "response_headers": {
+        "Content-Type": "application/json"
+      },
+      "response_body": {
+        "repos": [
+          {
+            "name": "codex-core",
+            "visibility": "private"
+          },
+          {
+            "name": "codex-tools",
+            "visibility": "private"
+          }
+        ],
+        "authorized_workload": "spiffe://openai.example.com/codex/pod-abc123"
+      },
+      "artifacts": [],
+      "tokens": [],
+      "is_response": true,
+      "explanation": "The resource server returns the data. The full trust chain ran: SPIRE attested the pod \u2192 SPIFFE-OAuth adapter bridged to OAuth \u2192 AS issued a DPoP-bound token \u2192 RS enforced sender-constraint. Three separate trust anchors (SPIRE CA, Instance Issuer, AS) each played their role, but only the workload's EC key ran the whole race.",
+      "annotations": [
+        "authorized_workload in the response illustrates how an RS can log the SPIFFE ID for forensic audit \u2014 the same pod identity that SPIRE manages.",
+        "\u00a710.1: The AS can revoke all tokens for this SPIFFE ID (pod-abc123) independently of other pods in the same client.",
+        "When SPIRE rotates the pod's SVID, the workload repeats steps 1\u20134 to get a fresh assertion. The access token TTL (3600s) is typically longer than the SVID TTL (300s) \u2014 this is intentional.",
+        "Full SPIFFE\u2192OAuth trust delegation: SPIRE attests identity \u2192 Issuer translates it \u2192 AS issues OAuth tokens \u2192 RS enforces policy."
+      ]
+    }
+  ]
+}

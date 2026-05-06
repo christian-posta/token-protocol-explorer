@@ -72,6 +72,15 @@ const NAV: NavSection[] = [
       { label: "Protocol Explorer ↗", href: process.env.NEXT_PUBLIC_AAUTH_URL || "https://aauth-implementation.vercel.app", external: true },
     ],
   },
+  {
+    title: "Client Instance Assertion",
+    color: "text-green-400",
+    items: [
+      { label: "Client Credentials (Self-Acting)", href: "/client-instance-assertion/client-credentials" },
+      { label: "Auth Code (Delegation)", href: "/client-instance-assertion/authz-code-delegation" },
+      { label: "SPIFFE Workload (SPIRE → OAuth)", href: "/client-instance-assertion/spiffe-workload" },
+    ],
+  },
 ];
 
 function SidebarSection({ section, defaultOpen }: { section: NavSection; defaultOpen: boolean }) {

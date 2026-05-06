@@ -1,0 +1,406 @@
+{
+  "id": "client-instance-assertion-authz-code-delegation",
+  "title": "Client Instance Assertion \u2014 User Delegation (authorization_code)",
+  "description": "A user authorizes an AI agent via OAuth authorization code. When the agent redeems the code, it presents its Client Instance Assertion as the actor_token. The resulting access token carries user delegation: sub=user, act.sub=agent instance. This is the 'delegation' case.",
+  "rfc": "IETF Draft",
+  "category": "Client Instance Assertion",
+  "participants": [
+    {
+      "id": "user",
+      "label": "User / Browser",
+      "type": "user"
+    },
+    {
+      "id": "instance",
+      "label": "Agent Instance",
+      "type": "client"
+    },
+    {
+      "id": "issuer",
+      "label": "Instance Issuer",
+      "type": "kms"
+    },
+    {
+      "id": "as",
+      "label": "Authorization Server",
+      "type": "idp"
+    },
+    {
+      "id": "rs",
+      "label": "Resource Server",
+      "type": "server"
+    }
+  ],
+  "steps": [
+    {
+      "step": 1,
+      "from": "user",
+      "to": "as",
+      "label": "GET /authorize (User Consent)",
+      "method": "GET",
+      "url": "https://as.example.com/authorize?response_type=code&client_id=https%3A%2F%2Fopenai.example.com%2Fcodex&scope=openid+repo.write&redirect_uri=https%3A%2F%2Fagent.example.com%2Fcallback&state=xyz&code_challenge=E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM&code_challenge_method=S256",
+      "request_headers": {
+        "Host": "as.example.com",
+        "Cookie": "session=user_session_token"
+      },
+      "request_body": null,
+      "response_status": 200,
+      "response_headers": {
+        "Content-Type": "text/html"
+      },
+      "response_body": "<html>Consent page: Allow 'Codex Agent' to access your repos?</html>",
+      "artifacts": [],
+      "tokens": [],
+      "explanation": "The user visits the authorization endpoint (redirected from the agent's frontend). The AS authenticates the user, displays a consent screen, and the user grants the agent access to their repositories. PKCE code_challenge is included for security.",
+      "annotations": [
+        "This is a standard OAuth 2.1 authorization_code flow. The instance assertion is NOT involved at this stage.",
+        "PKCE (code_challenge) protects against authorization code interception attacks.",
+        "The client_id here is the logical OAuth client (the agent service), not any specific instance.",
+        "\u00a78.4: The instance assertion presented at step 5 MUST go to the same AS that issued this authorization code."
+      ]
+    },
+    {
+      "step": 2,
+      "from": "as",
+      "to": "user",
+      "label": "302 Redirect + Auth Code",
+      "method": "GET",
+      "url": "https://as.example.com/authorize",
+      "request_headers": {},
+      "request_body": null,
+      "response_status": 302,
+      "response_headers": {
+        "Location": "https://agent.example.com/callback?code=SplxlOBeZQQYbYS6WxSbIA&state=xyz",
+        "Cache-Control": "no-store"
+      },
+      "response_body": null,
+      "artifacts": [],
+      "tokens": [],
+      "is_response": true,
+      "explanation": "The AS redirects the user's browser back to the agent's redirect_uri with a single-use authorization code. The code is bound to the PKCE code_challenge and the authenticated user. The agent receives the code when the browser follows the redirect.",
+      "annotations": [
+        "The authorization code is single-use and short-lived (typically 60\u2013600 seconds).",
+        "state parameter echoed back prevents CSRF attacks.",
+        "The code is NOT an instance assertion \u2014 it only identifies the authorization grant (user + client + scope).",
+        "The agent instance identity is established separately in step 5, at token redemption time."
+      ]
+    },
+    {
+      "step": 3,
+      "from": "instance",
+      "to": "issuer",
+      "label": "Request Instance Assertion",
+      "method": "POST",
+      "url": "https://workload.openai.example.com/assert",
+      "request_headers": {
+        "Content-Type": "application/x-www-form-urlencoded",
+        "Host": "workload.openai.example.com"
+      },
+      "request_body": "client_id=https%3A%2F%2Fopenai.example.com%2Fcodex&audience=https%3A%2F%2Fas.example.com",
+      "response_status": 200,
+      "response_headers": {
+        "Content-Type": "application/json"
+      },
+      "response_body": null,
+      "artifacts": [],
+      "tokens": [],
+      "explanation": "With the authorization code in hand, the agent instance requests its Client Instance Assertion from the Instance Issuer before redeeming the code. The issuer authenticates the runtime via platform attestation and verifies it is authorized to act as this client_id.",
+      "annotations": [
+        "\u00a77.1: Issuer MUST authenticate the runtime. Common: Kubernetes SPIFFE workload identity via SPIRE agent.",
+        "The assertion must name this same AS as audience \u2014 assertion cannot be reused at a different AS.",
+        "The agent may pre-fetch the assertion before receiving the code, but it must not be expired by token redemption time.",
+        "\u00a77.2: Recommended exp window \u22645 minutes \u2014 short enough to bound the trust-withdrawal latency."
+      ]
+    },
+    {
+      "step": 4,
+      "from": "issuer",
+      "to": "instance",
+      "label": "Instance Assertion JWT",
+      "method": "POST",
+      "url": "https://workload.openai.example.com/assert",
+      "request_headers": {},
+      "request_body": null,
+      "response_status": 200,
+      "response_headers": {
+        "Content-Type": "application/json"
+      },
+      "response_body": {
+        "token_type": "client-instance+jwt",
+        "assertion": "eyJhbGciOiJFUzI1NiIsImtpZCI6IjR2QzhhZ3ljSHU2cm5rRUVKWUFINlZ1Q2U0Sm9Ta1BWIiwidHlwIjoiY2xpZW50LWluc3RhbmNlK2p3dCJ9.eyJpc3MiOiJodHRwczovL3dvcmtsb2FkLm9wZW5haS5leGFtcGxlLmNvbSIsInN1YiI6InNwaWZmZTovL29wZW5haS5leGFtcGxlLmNvbS9jb2RleC9zZXNzaW9uLXh5eiIsImF1ZCI6Imh0dHBzOi8vYXMuZXhhbXBsZS5jb20iLCJjbGllbnRfaWQiOiJodHRwczovL29wZW5haS5leGFtcGxlLmNvbS9jb2RleCIsImlhdCI6MTc3MDAwMTAwMCwibmJmIjoxNzcwMDAxMDAwLCJleHAiOjE3NzAwMDEzMDAsImp0aSI6InVuaXF1ZS1pZC0xIiwiY25mIjp7ImprdCI6IjBaY09DT1JaTll5T1d5WWlndUE0SSJ9LCJzdWJfcHJvZmlsZSI6ImNsaWVudF9pbnN0YW5jZSJ9.SIG"
+      },
+      "artifacts": [
+        {
+          "type": "jwt",
+          "raw_input": "eyJhbGciOiJFUzI1NiIsImtpZCI6IjR2QzhhZ3ljSHU2cm5rRUVKWUFINlZ1Q2U0Sm9Ta1BWIiwidHlwIjoiY2xpZW50LWluc3RhbmNlK2p3dCJ9.eyJpc3MiOiJodHRwczovL3dvcmtsb2FkLm9wZW5haS5leGFtcGxlLmNvbSIsInN1YiI6InNwaWZmZTovL29wZW5haS5leGFtcGxlLmNvbS9jb2RleC9zZXNzaW9uLXh5eiIsImF1ZCI6Imh0dHBzOi8vYXMuZXhhbXBsZS5jb20iLCJjbGllbnRfaWQiOiJodHRwczovL29wZW5haS5leGFtcGxlLmNvbS9jb2RleCIsImlhdCI6MTc3MDAwMTAwMCwibmJmIjoxNzcwMDAxMDAwLCJleHAiOjE3NzAwMDEzMDAsImp0aSI6InVuaXF1ZS1pZC0xIiwiY25mIjp7ImprdCI6IjBaY09DT1JaTll5T1d5WWlndUE0SSJ9LCJzdWJfcHJvZmlsZSI6ImNsaWVudF9pbnN0YW5jZSJ9",
+          "signing_key_hint": "Instance Issuer ES256 Private Key (kid: 4vC8agycHu6rnkEEJYAH6VuCe4JoSkPV)",
+          "final_output": "ES256(PrivateKey, Base64Url(Header) + '.' + Base64Url(Payload))",
+          "steps": [
+            {
+              "label": "1. JOSE Header",
+              "value": "{\n  \"alg\": \"ES256\",\n  \"kid\": \"4vC8agycHu6rnkEEJYAH6VuCe4JoSkPV\",\n  \"typ\": \"client-instance+jwt\"\n}\n\n\u00a77.3: typ MUST be 'client-instance+jwt'.\nPrevents type-confusion with:\n  \u2022 WIMSE workload credentials\n  \u2022 Raw SPIFFE JWT-SVIDs (except \u00a78.8.1 SPIFFE compat mode)\n  \u2022 OAuth access tokens (at+jwt)\n  \u2022 OAuth client assertions (JWT)"
+            },
+            {
+              "label": "2. JWT Payload",
+              "value": "{\n  \"iss\": \"https://workload.openai.example.com\",\n  \"sub\": \"spiffe://openai.example.com/codex/session-xyz\",\n  \"aud\": \"https://as.example.com\",\n  \"client_id\": \"https://openai.example.com/codex\",\n  \"iat\": 1770001000,\n  \"nbf\": 1770001000,\n  \"exp\": 1770001300,\n  \"jti\": \"unique-id-1\",\n  \"cnf\": { \"jkt\": \"0ZcOCORZNYyOWyYiguA4I\" },\n  \"sub_profile\": \"client_instance\"\n}\n\nNOTE: Different session-xyz instance from self-acting scenario.\nEach container/pod/function gets a unique sub identifier.\nInstance identifiers MUST NOT be reused (\u00a712.2).\n\ncnf.jkt = JWK SHA-256 thumbprint (RFC 9449 \u00a73.1) of the instance key.\nMUST NOT contain an act claim (\u00a77.2)."
+            },
+            {
+              "label": "3. Client Metadata (Trust Anchor)",
+              "value": "The AS looks up client metadata for:\nhttps://openai.example.com/codex\n\nRelevant section:\n{\n  \"client_id\": \"https://openai.example.com/codex\",\n  \"token_endpoint_auth_method\": \"private_key_jwt\",\n  \"jwks_uri\": \"https://openai.example.com/codex/jwks.json\",\n  \"instance_issuers\": [{\n    \"issuer\": \"https://workload.openai.example.com\",\n    \"jwks_uri\": \"https://workload.openai.example.com/jwks.json\",\n    \"subject_syntax\": \"spiffe\",\n    \"trust_domain\": \"openai.example.com\",\n    \"spiffe_id\": \"spiffe://openai.example.com/codex/*\",\n    \"signing_alg_values_supported\": [\"ES256\"]\n  }]\n}\n\n\u00a76.1.1: By listing this issuer in instance_issuers, the client\ndelegates instance attestation authority to the issuer.\nThis metadata IS the trust anchor \u2014 the AS trusts it as authoritative.\n\u00a76.1.1: If instance_issuers is absent or empty, the AS MUST NOT\naccept client-instance-jwt assertions for this client."
+            }
+          ]
+        }
+      ],
+      "tokens": [
+        {
+          "name": "Client Instance Assertion",
+          "typ": "client-instance+jwt",
+          "raw": "eyJhbGciOiJFUzI1NiIsImtpZCI6IjR2QzhhZ3ljSHU2cm5rRUVKWUFINlZ1Q2U0Sm9Ta1BWIiwidHlwIjoiY2xpZW50LWluc3RhbmNlK2p3dCJ9.eyJpc3MiOiJodHRwczovL3dvcmtsb2FkLm9wZW5haS5leGFtcGxlLmNvbSIsInN1YiI6InNwaWZmZTovL29wZW5haS5leGFtcGxlLmNvbS9jb2RleC9zZXNzaW9uLXh5eiIsImF1ZCI6Imh0dHBzOi8vYXMuZXhhbXBsZS5jb20iLCJjbGllbnRfaWQiOiJodHRwczovL29wZW5haS5leGFtcGxlLmNvbS9jb2RleCIsImlhdCI6MTc3MDAwMTAwMCwibmJmIjoxNzcwMDAxMDAwLCJleHAiOjE3NzAwMDEzMDAsImp0aSI6InVuaXF1ZS1pZC0xIiwiY25mIjp7ImprdCI6IjBaY09DT1JaTll5T1d5WWlndUE0SSJ9LCJzdWJfcHJvZmlsZSI6ImNsaWVudF9pbnN0YW5jZSJ9.SIG",
+          "header": {
+            "alg": "ES256",
+            "kid": "4vC8agycHu6rnkEEJYAH6VuCe4JoSkPV",
+            "typ": "client-instance+jwt"
+          },
+          "payload": {
+            "iss": "https://workload.openai.example.com",
+            "sub": "spiffe://openai.example.com/codex/session-xyz",
+            "aud": "https://as.example.com",
+            "client_id": "https://openai.example.com/codex",
+            "iat": 1770001000,
+            "nbf": 1770001000,
+            "exp": 1770001300,
+            "jti": "unique-id-1",
+            "cnf": {
+              "jkt": "0ZcOCORZNYyOWyYiguA4I"
+            },
+            "sub_profile": "client_instance"
+          },
+          "signature_b64": "SIG"
+        }
+      ],
+      "is_response": true,
+      "explanation": "The Instance Issuer returns the signed Client Instance Assertion. The instance (session-xyz) is a different container/pod from session-abc in the self-acting scenario \u2014 each runtime gets its own unique SPIFFE ID. The cnf.jkt seeds the key-binding that the AS will enforce when issuing the final access token.",
+      "annotations": [
+        "\u00a712.2: Instance identifiers MUST be unique and MUST NOT be reused for different runtimes.",
+        "\u00a77.3: typ = 'client-instance+jwt' is mandatory \u2014 AS rejects any other value.",
+        "\u00a77.2: exp is set to 1770001300 \u2014 exactly 300 seconds (5 min) from iat. Satisfies \u00a77.2 maximum.",
+        "\u00a77.2: sub_profile = 'client_instance' \u2014 RECOMMENDED. Lets RS apply instance-class-aware policy."
+      ]
+    },
+    {
+      "step": 5,
+      "from": "instance",
+      "to": "as",
+      "label": "POST /token (authz_code)",
+      "method": "POST",
+      "url": "https://as.example.com/token",
+      "request_headers": {
+        "Content-Type": "application/x-www-form-urlencoded",
+        "Host": "as.example.com",
+        "DPoP": "eyJ0eXAiOiJkcG9wK2p3dCIsImFsZyI6IkVTMjU2IiwiandrIjp7Imt0eSI6IkVDIiwieCI6IkVDX3B1YmxpY19rZXlfeCIsInkiOiJFQ19wdWJsaWNfa2V5X3kiLCJjcnYiOiJQLTI1NiJ9fQ.eyJqdGkiOiJkcG9wLWF1dGh6LTAwMSIsImh0bSI6IlBPU1QiLCJodHUiOiJodHRwczovL2FzLmV4YW1wbGUuY29tL3Rva2VuIiwiaWF0IjoxNzcwMDAxMDIwfQ.DPoP_Authz_Sig"
+      },
+      "request_body": "grant_type=authorization_code&code=SplxlOBeZQQYbYS6WxSbIA&redirect_uri=https%3A%2F%2Fagent.example.com%2Fcallback&code_verifier=dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk&client_id=https%3A%2F%2Fopenai.example.com%2Fcodex&client_assertion_type=urn%3Aietf%3Aparams%3Aoauth%3Aclient-assertion-type%3Ajwt-bearer&client_assertion=eyJhbGciOiJFUzI1NiIs...&actor_token=eyJhbGciOiJFUzI1NiIs...&actor_token_type=urn%3Aietf%3Aparams%3Aoauth%3Atoken-type%3Aclient-instance-jwt",
+      "response_status": 200,
+      "response_headers": {
+        "Content-Type": "application/json"
+      },
+      "response_body": null,
+      "artifacts": [
+        {
+          "type": "jwt",
+          "raw_input": "grant_type=authorization_code&code=SplxlOBeZQQYbYS6WxSbIA&client_assertion=eyJ...&actor_token=eyJ...",
+          "signing_key_hint": "Two JWTs presented: client_assertion (client's key) + actor_token (instance issuer's key)",
+          "final_output": "Two independent JWT signatures in one token request",
+          "steps": [
+            {
+              "label": "1. client_assertion (Client Auth)",
+              "value": "client_assertion_type:\n  urn:ietf:params:oauth:client-assertion-type:jwt-bearer\n\nclient_assertion JWT (private_key_jwt):\n{\n  \"iss\": \"https://openai.example.com/codex\",\n  \"sub\": \"https://openai.example.com/codex\",\n  \"aud\": \"https://as.example.com/token\",\n  \"exp\": 1770001360,\n  \"iat\": 1770001020,\n  \"jti\": \"client-assertion-jti-001\"\n}\nSigned with: client's private key (from jwks_uri)\n\nThis authenticates the LOGICAL CLIENT (the agent service).\nIt is SEPARATE from the instance assertion.\n\nRequired because token_endpoint_auth_method = 'private_key_jwt'.\nIf method were 'client_instance_jwt', only actor_token would be needed\n(the actor_token doubles as client authentication in that case)."
+            },
+            {
+              "label": "2. actor_token (Instance Assertion)",
+              "value": "actor_token = Client Instance Assertion from step 4\nactor_token_type =\n  urn:ietf:params:oauth:token-type:client-instance-jwt\n\nThis identifies the SPECIFIC RUNTIME INSTANCE.\nIt is a separate JWT, signed by the Instance Issuer.\n\nDISTINCTION:\n\u2022 client_assertion \u2192 authenticates the OAuth client identity\n\u2022 actor_token \u2192 authenticates the specific container/process\n\nBoth are required when token_endpoint_auth_method=private_key_jwt.\nIf method were client_instance_jwt, only actor_token is needed."
+            },
+            {
+              "label": "3. Full Token Request",
+              "value": "grant_type=authorization_code\n&code=SplxlOBeZQQYbYS6WxSbIA\n&redirect_uri=https://agent.example.com/callback\n&code_verifier=dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk\n&client_id=https://openai.example.com/codex\n&client_assertion_type=\n  urn:ietf:params:oauth:client-assertion-type:jwt-bearer\n&client_assertion=<client private_key_jwt>\n&actor_token=<Client Instance Assertion JWT from step 4>\n&actor_token_type=\n  urn:ietf:params:oauth:token-type:client-instance-jwt\n\nDPoP: <proof in header \u2014 same key as cnf.jkt in assertion>\n\n\u00a74.1: authorization_code is a permitted grant type for\nactor_token (this spec extends beyond RFC 8693 token-exchange).\n\n\u00a78.4: AS MUST verify client_id at /token matches the client_id\nthat received the authorization code (authorization-time consistency).\n\u00a78.4: AS MUST NOT permit instance identity to bypass standard\nauthorization-code controls (single-use, redirect URI, code challenge)."
+            }
+          ]
+        }
+      ],
+      "tokens": [],
+      "explanation": "The agent instance redeems the authorization code. This request carries both a client_assertion (authenticating the logical client via private_key_jwt) AND an actor_token (the Client Instance Assertion identifying this specific runtime). Together they answer: which client? (client_assertion) and which instance of that client? (actor_token). The DPoP proof binds everything to the instance's private key.",
+      "annotations": [
+        "\u00a74.1: This spec extends actor_token to authorization_code grant \u2014 not permitted in RFC 8693 (token exchange only).",
+        "Two-level authentication: client_assertion = logical client identity; actor_token = specific runtime instance.",
+        "\u00a78.4: The instance assertion MUST be presented to the same AS that issued the authorization code.",
+        "\u00a78.2 Step 9: AS checks authorization-time consistency \u2014 the authorization code was bound to this client_id."
+      ]
+    },
+    {
+      "step": 6,
+      "from": "as",
+      "to": "instance",
+      "label": "200 OK + Access Token",
+      "method": "POST",
+      "url": "https://as.example.com/token",
+      "request_headers": {},
+      "request_body": null,
+      "response_status": 200,
+      "response_headers": {
+        "Content-Type": "application/json",
+        "Cache-Control": "no-store"
+      },
+      "response_body": {
+        "access_token": "eyJ0eXAiOiJhdCtqd3QiLCJhbGciOiJFUzI1NiJ9.eyJpc3MiOiJodHRwczovL2FzLmV4YW1wbGUuY29tIiwiYXVkIjoiaHR0cHM6Ly9hcGkuZXhhbXBsZS5jb20iLCJzdWIiOiJ1c2VyQGV4YW1wbGUuY29tIiwiY2xpZW50X2lkIjoiaHR0cHM6Ly9vcGVuYWkuZXhhbXBsZS5jb20vY29kZXgiLCJzY29wZSI6Im9wZW5pZCByZXBvLndyaXRlIiwiY25mIjp7ImprdCI6IjBaY09DT1JaTll5T1d5WWlndUE0SSJ9LCJpYXQiOjE3NzAwMDEwMzAsImV4cCI6MTc3MDAwNDYzMCwiYWN0Ijp7InN1YiI6InNwaWZmZTovL29wZW5haS5leGFtcGxlLmNvbS9jb2RleC9zZXNzaW9uLXh5eiIsImlzcyI6Imh0dHBzOi8vd29ya2xvYWQub3BlbmFpLmV4YW1wbGUuY29tIiwiY25mIjp7ImprdCI6IjBaY09DT1JaTll5T1d5WWlndUE0SSJ9LCJzdWJfcHJvZmlsZSI6ImNsaWVudF9pbnN0YW5jZSJ9fQ.AS_DELEGATION_SIG",
+        "token_type": "DPoP",
+        "expires_in": 3600,
+        "scope": "openid repo.write"
+      },
+      "artifacts": [
+        {
+          "type": "jwt",
+          "raw_input": "eyJ0eXAiOiJhdCtqd3QiLCJhbGciOiJFUzI1NiJ9.eyJpc3MiOiJodHRwczovL2FzLmV4YW1wbGUuY29tIiwiYXVkIjoiaHR0cHM6Ly9hcGkuZXhhbXBsZS5jb20iLCJzdWIiOiJ1c2VyQGV4YW1wbGUuY29tIiwiY2xpZW50X2lkIjoiaHR0cHM6Ly9vcGVuYWkuZXhhbXBsZS5jb20vY29kZXgiLCJzY29wZSI6Im9wZW5pZCByZXBvLndyaXRlIiwiY25mIjp7ImprdCI6IjBaY09DT1JaTll5T1d5WWlndUE0SSJ9LCJpYXQiOjE3NzAwMDEwMzAsImV4cCI6MTc3MDAwNDYzMCwiYWN0Ijp7InN1YiI6InNwaWZmZTovL29wZW5haS5leGFtcGxlLmNvbS9jb2RleC9zZXNzaW9uLXh5eiIsImlzcyI6Imh0dHBzOi8vd29ya2xvYWQub3BlbmFpLmV4YW1wbGUuY29tIiwiY25mIjp7ImprdCI6IjBaY09DT1JaTll5T1d5WWlndUE0SSJ9LCJzdWJfcHJvZmlsZSI6ImNsaWVudF9pbnN0YW5jZSJ9fQ",
+          "signing_key_hint": "Authorization Server ES256 Signing Key",
+          "final_output": "AS-signed JWT Access Token with Delegation Structure",
+          "steps": [
+            {
+              "label": "1. AS Validation Steps (\u00a78.2)",
+              "value": "Processing for authorization_code with private_key_jwt auth:\n1. Validate authorization code (user='user@example.com' authorized)\n2. Verify client_assertion (private_key_jwt) \u2192 client authenticated\n3. actor_token_type = client-instance-jwt \u2192 instance assertion path\n4. Resolve client metadata for https://openai.example.com/codex\n5. Parse actor_token, read iss='https://workload.openai.example.com'\n6. Find descriptor in instance_issuers where issuer matches iss\n7. Fetch JWKS from descriptor's jwks_uri\n8. Verify ES256 signature on instance assertion\n9. Validate typ = 'client-instance+jwt' (reject any other value)\n10. Validate: aud = this AS, exp not expired, jti not replayed\n11. Validate: client_id in assertion = authenticated client_id \u2713\n12. \u00a78.4: Verify assertion's AS = authorization code's AS \u2713\n13. Verify DPoP proof; JWK thumbprint = cnf.jkt \u2713\n14. \u00a78.6.1: grant_type=authorization_code \u2192 DELEGATION case\n15. Populate act claim per \u00a78.6.2"
+            },
+            {
+              "label": "2. Access Token (Delegation Case, \u00a78.6.2)",
+              "value": "{\n  \"iss\": \"https://as.example.com\",\n  \"aud\": \"https://api.example.com\",\n  \"sub\": \"user@example.com\",\n  \"client_id\": \"https://openai.example.com/codex\",\n  \"scope\": \"openid repo.write\",\n  \"cnf\": { \"jkt\": \"0ZcOCORZNYyOWyYiguA4I\" },\n  \"iat\": 1770001030,\n  \"exp\": 1770004630,\n  \"act\": {\n    \"sub\": \"spiffe://openai.example.com/codex/session-xyz\",\n    \"iss\": \"https://workload.openai.example.com\",\n    \"cnf\": { \"jkt\": \"0ZcOCORZNYyOWyYiguA4I\" },\n    \"sub_profile\": \"client_instance\"\n  }\n}\n\nDELEGATION CASE (\u00a78.6.2):\n\u2022 sub = the user who authorized (USER is principal)\n\u2022 act.sub = actor_token's sub (INSTANCE is actor)\n\u2022 act.iss = actor_token's iss (for auditability)\n\u2022 act.cnf = actor_token's cnf (instance key for RS sender-constraint)\n\u2022 act.sub_profile = actor_token's sub_profile \u2014 SHOULD include\n\u2022 Top-level cnf = same instance key (bound via DPoP at token endpoint)\n\n\u00a78.6.1: Grant type determines case:\n  authorization_code \u2192 delegation (act claim present)\n  client_credentials \u2192 self-acting (no act claim)"
+            },
+            {
+              "label": "3. Compare: Delegation vs Self-Acting",
+              "value": "SELF-ACTING (client_credentials, other scenario):\n{\n  \"sub\": \"spiffe://...session-abc\",   \u2190 instance IS principal\n  \"sub_profile\": \"client_instance\",\n  \"cnf\": { \"jkt\": \"...\" }\n  // NO act claim\n}\n\nDELEGATION (authorization_code, this step):\n{\n  \"sub\": \"user@example.com\",          \u2190 USER is principal\n  \"act\": {\n    \"sub\": \"spiffe://...session-xyz\", \u2190 INSTANCE is actor\n    \"iss\": \"https://workload...\",\n    \"sub_profile\": \"client_instance\",\n    \"cnf\": { \"jkt\": \"...\" }\n  }\n}\n\n\u00a78.6.1: The grant type determines which case applies.\nASes MUST NOT use heuristics or fuzzy matching to classify \u2014\nwhen classification is ambiguous, AS MUST refuse (invalid_grant)."
+            }
+          ]
+        }
+      ],
+      "tokens": [
+        {
+          "name": "Access Token (Delegation)",
+          "typ": "at+jwt",
+          "raw": "eyJ0eXAiOiJhdCtqd3QiLCJhbGciOiJFUzI1NiJ9.eyJpc3MiOiJodHRwczovL2FzLmV4YW1wbGUuY29tIiwiYXVkIjoiaHR0cHM6Ly9hcGkuZXhhbXBsZS5jb20iLCJzdWIiOiJ1c2VyQGV4YW1wbGUuY29tIiwiY2xpZW50X2lkIjoiaHR0cHM6Ly9vcGVuYWkuZXhhbXBsZS5jb20vY29kZXgiLCJzY29wZSI6Im9wZW5pZCByZXBvLndyaXRlIiwiY25mIjp7ImprdCI6IjBaY09DT1JaTll5T1d5WWlndUE0SSJ9LCJpYXQiOjE3NzAwMDEwMzAsImV4cCI6MTc3MDAwNDYzMCwiYWN0Ijp7InN1YiI6InNwaWZmZTovL29wZW5haS5leGFtcGxlLmNvbS9jb2RleC9zZXNzaW9uLXh5eiIsImlzcyI6Imh0dHBzOi8vd29ya2xvYWQub3BlbmFpLmV4YW1wbGUuY29tIiwiY25mIjp7ImprdCI6IjBaY09DT1JaTll5T1d5WWlndUE0SSJ9LCJzdWJfcHJvZmlsZSI6ImNsaWVudF9pbnN0YW5jZSJ9fQ.AS_DELEGATION_SIG",
+          "header": {
+            "typ": "at+jwt",
+            "alg": "ES256"
+          },
+          "payload": {
+            "iss": "https://as.example.com",
+            "aud": "https://api.example.com",
+            "sub": "user@example.com",
+            "client_id": "https://openai.example.com/codex",
+            "scope": "openid repo.write",
+            "cnf": {
+              "jkt": "0ZcOCORZNYyOWyYiguA4I"
+            },
+            "iat": 1770001030,
+            "exp": 1770004630,
+            "act": {
+              "sub": "spiffe://openai.example.com/codex/session-xyz",
+              "iss": "https://workload.openai.example.com",
+              "cnf": {
+                "jkt": "0ZcOCORZNYyOWyYiguA4I"
+              },
+              "sub_profile": "client_instance"
+            }
+          },
+          "signature_b64": "AS_DELEGATION_SIG"
+        }
+      ],
+      "is_response": true,
+      "explanation": "The AS issues an access token with delegation structure. The user remains the principal (sub), while the specific agent instance appears in the act claim. Both the top-level cnf and act.cnf carry the instance key's thumbprint. Resource servers can now enforce policy based on both who (the user) and which instance (the agent) made the request.",
+      "annotations": [
+        "\u00a78.6.2: DELEGATION case \u2014 sub = user principal, act.sub = instance actor. Contrast with self-acting where sub = instance.",
+        "\u00a78.6.1: Grant type determines the case: authorization_code \u2192 delegation. client_credentials \u2192 self-acting.",
+        "The act.cnf lets the RS verify sender-constraint specifically for the acting instance, not just the top-level cnf.",
+        "\u00a78.6.4: If there were a prior act chain (e.g., agent spawning a sub-agent), the new instance becomes the outermost act and prior chain nests as act.act."
+      ]
+    },
+    {
+      "step": 7,
+      "from": "instance",
+      "to": "rs",
+      "label": "GET /api/repos (Delegated)",
+      "method": "GET",
+      "url": "https://api.example.com/api/repos",
+      "request_headers": {
+        "Authorization": "DPoP eyJ0eXAiOiJhdCtqd3QiLCJhbGciOiJFUzI1NiJ9...AS_DELEGATION_SIG",
+        "DPoP": "eyJ0eXAiOiJkcG9wK2p3dCIsImFsZyI6IkVTMjU2IiwiandrIjp7Imt0eSI6IkVDIiwieCI6IkVDX3B1YmxpY19rZXlfeCIsInkiOiJFQ19wdWJsaWNfa2V5X3kiLCJjcnYiOiJQLTI1NiJ9fQ.eyJqdGkiOiJkcG9wLXJzLTAwMSIsImh0bSI6IkdFVCIsImh0dSI6Imh0dHBzOi8vYXBpLmV4YW1wbGUuY29tL2FwaS9yZXBvcyIsImlhdCI6MTc3MDAwMTUwMCwiYXRoIjoiU0hBMjU2X29mX2RlbGVnYXRlZF90b2tlbiJ9.DPoP_Delegated_Sig",
+        "Host": "api.example.com"
+      },
+      "request_body": null,
+      "response_status": 200,
+      "response_headers": {
+        "Content-Type": "application/json"
+      },
+      "response_body": null,
+      "artifacts": [
+        {
+          "type": "jwt",
+          "raw_input": "DPoP proof for delegated resource access",
+          "signing_key_hint": "Instance ES256 Private Key \u2014 same key as act.cnf.jkt",
+          "final_output": "DPoP Proof Signature for Delegated Resource Request",
+          "steps": [
+            {
+              "label": "1. RS Policy on Delegated Token (\u00a79)",
+              "value": "The Resource Server sees this access token structure:\n{\n  \"sub\": \"user@example.com\",          \u2190 the USER authorized this\n  \"act\": {\n    \"sub\": \"spiffe://...session-xyz\", \u2190 this INSTANCE is presenting it\n    \"sub_profile\": \"client_instance\"\n  },\n  \"scope\": \"repo.write\",\n  \"cnf\": { \"jkt\": \"...\" }             \u2190 instance's key\n}\n\nRS can now make DUAL policy decisions:\n1. User-based: Does user@example.com have access to this repo?\n2. Instance-based: Is this a known instance type ('client_instance')?\n   Should this instance be allowed to act on the user's behalf?\n3. Scope-based: Is repo.write authorized for this request?\n\n\u00a79: RS MUST NOT rely on act.iss for proof of possession.\nTop-level cnf is the authoritative key binding (not act.cnf)."
+            },
+            {
+              "label": "2. Audit Trail",
+              "value": "The delegation structure enables forensic-quality audit logging:\n\nWho authorized: user@example.com\nWhich client: https://openai.example.com/codex\nWhich instance: spiffe://openai.example.com/codex/session-xyz\nInstance issuer: https://workload.openai.example.com\nInstance key: JWK thumbprint 0ZcOCORZNYy...iguA4I\nRequested scope: openid repo.write\nAction: GET /api/repos\n\nThis audit record answers:\n  'Which specific container of the Codex agent, running\n  at what time, accessed user@example.com's repos?'"
+            }
+          ]
+        }
+      ],
+      "tokens": [],
+      "explanation": "The agent instance calls the resource server with the delegated access token. The RS can inspect both the user principal (sub) and the acting instance (act.sub) to make fine-grained access decisions. The DPoP proof proves the caller holds the instance's private key \u2014 matching the top-level cnf.jkt in the token.",
+      "annotations": [
+        "\u00a79.1: RS sees sub_profile='client_instance' in the act claim \u2014 applies instance-aware actor policy.",
+        "The delegation structure enables audit logging that captures both the authorizing user AND the specific instance that acted.",
+        "\u00a78.6.2: The RS can enforce that the act.sub instance is a legitimate member of the client (verified by AS during issuance).",
+        "\u00a712.6: The grant type (authorization_code) makes the delegation mode unambiguous \u2014 prevents mode-switch attacks."
+      ]
+    },
+    {
+      "step": 8,
+      "from": "rs",
+      "to": "instance",
+      "label": "200 OK + Resource",
+      "method": "GET",
+      "url": "https://api.example.com/api/repos",
+      "request_headers": {},
+      "request_body": null,
+      "response_status": 200,
+      "response_headers": {
+        "Content-Type": "application/json"
+      },
+      "response_body": {
+        "repos": [
+          {
+            "name": "user-project-alpha",
+            "visibility": "private"
+          },
+          {
+            "name": "user-project-beta",
+            "visibility": "private"
+          }
+        ],
+        "accessed_as": "user@example.com",
+        "acting_instance": "spiffe://openai.example.com/codex/session-xyz"
+      },
+      "artifacts": [],
+      "tokens": [],
+      "is_response": true,
+      "explanation": "The resource server returns the user's repositories. The response includes both the user's identity and the instance that acted on their behalf \u2014 enabling end-to-end accountability. The acting_instance field illustrates how the RS can surface instance identity for audit and compliance purposes.",
+      "annotations": [
+        "The RS validated both the user principal (sub) and the acting instance (act.sub) before authorizing the request.",
+        "\u00a712.9: Instance identifiers in access tokens should be treated as sensitive \u2014 equivalent to user tokens for logging purposes.",
+        "\u00a710.1.2: The AS can revoke all tokens for a specific instance (act.sub) if the container is suspected compromised.",
+        "The full accountability chain: user authorized \u2192 AS validated instance \u2192 RS confirmed both \u2192 resource returned."
+      ]
+    }
+  ]
+}

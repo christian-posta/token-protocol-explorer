@@ -85,6 +85,21 @@ const PROTOCOLS = [
     ],
   },
   {
+    id: "client-instance-assertion",
+    name: "Client Instance Assertion",
+    rfc: "IETF Draft",
+    rfcUrl: "https://mcguinness.github.io/draft-mcguinness-oauth-client-instance-actor-assertion/draft-mcguinness-oauth-client-instance-actor-assertion.html",
+    accent: "border-green-500/35 hover:border-green-500/55",
+    iconWrap: "bg-green-500/15 text-green-400",
+    description:
+      "OAuth 2.0 extension enabling ephemeral runtime instances (containers, agents, functions) to be individually authenticated via short-lived JWT instance assertions, with sender-constrained access tokens bound to instance keys. Covers both self-acting (client_credentials) and user-delegation (authorization_code) flows.",
+    scenarios: [
+      { label: "Client Credentials (Self-Acting)", href: "/client-instance-assertion/client-credentials" },
+      { label: "Auth Code (Delegation)", href: "/client-instance-assertion/authz-code-delegation" },
+      { label: "SPIFFE Workload (SPIRE → OAuth)", href: "/client-instance-assertion/spiffe-workload" },
+    ],
+  },
+  {
     id: "aauth",
     name: "AAuth",
     rfc: "aauth.dev",

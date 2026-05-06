@@ -1,6 +1,6 @@
 {
   "id": "oauth2-dpop-full-flow",
-  "title": "OAuth 2.0 DPoP — Full Flow",
+  "title": "OAuth 2.0 DPoP \u2014 Full Flow",
   "description": "Demonstrating Proof-of-Possession (DPoP) at the application layer. The client generates a DPoP proof to bind the access token to a private key, preventing token replay.",
   "rfc": "RFC 9449",
   "category": "OAuth 2.0 DPoP",
@@ -60,7 +60,7 @@
             },
             {
               "label": "3. Sign JWT",
-              "value": "ES256(Base64Url(Header) + \".\" + Base64Url(Payload), PrivateKey) → Signature"
+              "value": "ES256(Base64Url(Header) + \".\" + Base64Url(Payload), PrivateKey) \u2192 Signature"
             }
           ]
         }
@@ -126,7 +126,7 @@
       "request_headers": {
         "Authorization": "DPoP eyJ0eXAiOiJhdCtqd3QiLCJhbGciOiJFUzI1NiJ9.eyJpc3MiOiJodHRwczovL2F1dGguZXhhbXBsZS5jb20iLCJzdWIiOiJ1c2VyMTIzIiwiYXVkIjoiaHR0cHM6Ly9hcGkuZXhhbXBsZS5jb20iLCJleHAiOjE1NjIyNjYyMTYsImlhdCI6MTU2MjI2MjYxNiwiY25mIjp7ImprdCI6IjBaaG03UE1VWHk4M3Ztdm91RmZIRmEydFlxTXdZVWg3aUNwVlhqUm82U2MifX0.mock_sig",
         "Content-Type": "application/json",
-        "DPoP": "eyJ0eXAiOiJkcG9wK2p3dCIsImFsZyI6IkVTMjU2In0.eyJqdGkiOiJBaHROaXhsRThPZyIsImh0bSI6IlBPU1QiLCJodHUiOiJodHRwczovL2FwaS5leGFtcGxlLmNvbS9wcm90ZWN0ZWQiLCJpYXQiOjE1NjIyNjI2MTh9.aBcDe..."
+        "DPoP": "eyJ0eXAiOiJkcG9wK2p3dCIsImFsZyI6IkVTMjU2IiwiandrIjp7Imt0eSI6IkVDIiwieCI6Imw4QkZkYW1Rcm02VW11RVBZNnIxcXlKRGxiM1V0M2pYV2l1S240LUdSM0EiLCJ5IjoiX2VLUHNJX3VzZV8yZmt6akRqaHFxOHFWZV8yb1Z2SW81akxRM01oNDF1TSIsImNydiI6IlAtMjU2In19.eyJqdGkiOiJBaHROaXhsRThPZyIsImh0bSI6IlBPU1QiLCJodHUiOiJodHRwczovL2FwaS5leGFtcGxlLmNvbS9wcm90ZWN0ZWQiLCJpYXQiOjE1NjIyNjI2MTgsImF0aCI6InBfWkhocUlWVkZDN1lkYkdTQnFaLVRTY0E2WThsWENNSWJJdXR0TjI2dzAifQ.aBcDe..."
       },
       "request_body": {
         "action": "transfer",
@@ -143,21 +143,21 @@
       "artifacts": [
         {
           "type": "jwt",
-          "raw_input": "eyJ0eXAiOiJkcG9wK2p3dCIsImFsZyI6IkVTMjU2In0.eyJqdGkiOiJBaHROaXhsRThPZyIsImh0bSI6IlBPU1QiLCJodHUiOiJodHRwczovL2FwaS5leGFtcGxlLmNvbS9wcm90ZWN0ZWQiLCJpYXQiOjE1NjIyNjI2MTh9",
+          "raw_input": "eyJ0eXAiOiJkcG9wK2p3dCIsImFsZyI6IkVTMjU2IiwiandrIjp7Imt0eSI6IkVDIiwieCI6Imw4QkZkYW1Rcm02VW11RVBZNnIxcXlKRGxiM1V0M2pYV2l1S240LUdSM0EiLCJ5IjoiX2VLUHNJX3VzZV8yZmt6akRqaHFxOHFWZV8yb1Z2SW81akxRM01oNDF1TSIsImNydiI6IlAtMjU2In19.eyJqdGkiOiJBaHROaXhsRThPZyIsImh0bSI6IlBPU1QiLCJodHUiOiJodHRwczovL2FwaS5leGFtcGxlLmNvbS9wcm90ZWN0ZWQiLCJpYXQiOjE1NjIyNjI2MTgsImF0aCI6InBfWkhocUlWVkZDN1lkYkdTQnFaLVRTY0E2WThsWENNSWJJdXR0TjI2dzAifQ",
           "signing_key_hint": "Client's ES256 Private Key",
           "final_output": "aBcDe...",
           "steps": [
             {
-              "label": "1. Build JWT Header (No JWK needed)",
-              "value": "{\n  \"typ\": \"dpop+jwt\",\n  \"alg\": \"ES256\"\n}"
+              "label": "1. Build JWT Header (includes Public Key)",
+              "value": "{\n  \"typ\": \"dpop+jwt\",\n  \"alg\": \"ES256\",\n  \"jwk\": {\n    \"kty\": \"EC\",\n    \"x\": \"l8BFdamQrm6UmuEPY6r1qyJDlb3Ut3jXWiuKn4-GR3A\",\n    \"y\": \"_eKPsI_use_2fkzjDjhqq8qVe_2oVvIo5jLQ3Mh41uM\",\n    \"crv\": \"P-256\"\n  }\n}\n\nRFC 9449 \u00a74.2: jwk MUST be present in every DPoP proof header,\nincluding proofs sent to the resource server.\n\nThe RS uses the jwk to:\n  1. Verify the DPoP proof signature\n  2. Compute SHA-256(canonicalized jwk) \u2192 compare to cnf.jkt\n     in the access token to confirm key binding"
             },
             {
-              "label": "2. Build JWT Payload (Fresh JTI and URL)",
-              "value": "{\n  \"jti\": \"AhtNixlE8Og\",\n  \"htm\": \"POST\",\n  \"htu\": \"https://api.example.com/protected\",\n  \"iat\": 1562262618\n}"
+              "label": "2. Build JWT Payload (with ath)",
+              "value": "{\n  \"jti\": \"AhtNixlE8Og\",\n  \"htm\": \"POST\",\n  \"htu\": \"https://api.example.com/protected\",\n  \"iat\": 1562262618,\n  \"ath\": \"p_ZHhqIVVFC7YdbGSBqZ-TScA6Y8lXCMIbIuttN26w0\"\n}\n\nath = BASE64URL(SHA-256(ASCII(access_token)))\n    = p_ZHhqIVVFC7YdbGSBqZ-TScA6Y8lXCMIbIuttN26w0\n\nRFC 9449 \u00a74.3: ath MUST be present when a DPoP proof\nis sent to a resource server. It binds this proof to\nexactly this access token \u2014 a stolen proof cannot be\nreplayed with a different token.\n\nNote: ath was NOT included in step 1 (token endpoint)\nbecause there was no access token yet at that point."
             },
             {
               "label": "3. Sign JWT",
-              "value": "ES256(Base64Url(Header) + \".\" + Base64Url(Payload), PrivateKey) → Signature"
+              "value": "ES256(Base64Url(Header) + \".\" + Base64Url(Payload), PrivateKey) \u2192 Signature"
             }
           ]
         }
@@ -166,24 +166,33 @@
         {
           "name": "DPoP Proof",
           "typ": "dpop+jwt",
-          "raw": "eyJ0eXAiOiJkcG9wK2p3dCIsImFsZyI6IkVTMjU2In0.eyJqdGkiOiJBaHROaXhsRThPZyIsImh0bSI6IlBPU1QiLCJodHUiOiJodHRwczovL2FwaS5leGFtcGxlLmNvbS9wcm90ZWN0ZWQiLCJpYXQiOjE1NjIyNjI2MTh9.aBcDe...",
+          "raw": "eyJ0eXAiOiJkcG9wK2p3dCIsImFsZyI6IkVTMjU2IiwiandrIjp7Imt0eSI6IkVDIiwieCI6Imw4QkZkYW1Rcm02VW11RVBZNnIxcXlKRGxiM1V0M2pYV2l1S240LUdSM0EiLCJ5IjoiX2VLUHNJX3VzZV8yZmt6akRqaHFxOHFWZV8yb1Z2SW81akxRM01oNDF1TSIsImNydiI6IlAtMjU2In19.eyJqdGkiOiJBaHROaXhsRThPZyIsImh0bSI6IlBPU1QiLCJodHUiOiJodHRwczovL2FwaS5leGFtcGxlLmNvbS9wcm90ZWN0ZWQiLCJpYXQiOjE1NjIyNjI2MTgsImF0aCI6InBfWkhocUlWVkZDN1lkYkdTQnFaLVRTY0E2WThsWENNSWJJdXR0TjI2dzAifQ.aBcDe...",
           "header": {
             "typ": "dpop+jwt",
-            "alg": "ES256"
+            "alg": "ES256",
+            "jwk": {
+              "kty": "EC",
+              "x": "l8BFdamQrm6UmuEPY6r1qyJDlb3Ut3jXWiuKn4-GR3A",
+              "y": "_eKPsI_use_2fkzjDjhqq8qVe_2oVvIo5jLQ3Mh41uM",
+              "crv": "P-256"
+            }
           },
           "payload": {
             "jti": "AhtNixlE8Og",
             "htm": "POST",
             "htu": "https://api.example.com/protected",
-            "iat": 1562262618
+            "iat": 1562262618,
+            "ath": "p_ZHhqIVVFC7YdbGSBqZ-TScA6Y8lXCMIbIuttN26w0"
           },
           "signature_b64": "aBcDe..."
         }
       ],
-      "explanation": "The client accesses the resource server. It proves possession of the private key by generating a new DPoP proof specifically for this API request. The resource server verifies the signature and ensures the public key hash matches the 'cnf' claim in the access token.",
+      "explanation": "The client accesses the resource server with a fresh DPoP proof for this specific request. The proof includes the full public key (jwk) in the header and an access token hash (ath) in the payload \u2014 both required by RFC 9449 at the RS. The resource server verifies the signature using the embedded jwk, checks the key thumbprint matches cnf.jkt in the access token, and confirms the ath matches the presented token.",
       "annotations": [
+        "RFC 9449 \u00a74.2: The jwk header MUST be present in every DPoP proof, including those sent to the resource server. The RS uses it to verify the proof signature and confirm the key matches cnf.jkt in the access token.",
+        "RFC 9449 \u00a74.3: ath (access token hash = BASE64URL(SHA-256(access_token))) MUST be included when the proof is sent to a resource server, binding this proof to the specific access token.",
         "The new DPoP proof is bound to the specific HTTP method and URL (htm, htu), preventing it from being intercepted and replayed on other endpoints.",
-        "RFC 9449 §4.1 notes that the 'jwk' header is NOT RECOMMENDED in proofs sent to the resource server, as the server should extract the required public key via the access token's 'cnf' claim."
+        "The RS validation chain: verify proof signature with jwk \u2192 compute SHA-256(jwk) \u2192 compare to cnf.jkt \u2192 verify ath matches presented access token."
       ]
     }
   ]
