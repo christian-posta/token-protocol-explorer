@@ -3,6 +3,7 @@
   "title": "Client Instance Assertion \u2014 User Delegation (authorization_code)",
   "description": "A user authorizes an AI agent via OAuth authorization code. When the agent redeems the code, it presents its Client Instance Assertion as the actor_token. The resulting access token carries user delegation: sub=user, act.sub=agent instance. This is the 'delegation' case.",
   "rfc": "IETF Draft",
+  "specUrl": "https://mcguinness.github.io/draft-mcguinness-oauth-client-instance-actor-assertion/draft-mcguinness-oauth-client-instance-actor-assertion.html",
   "category": "Client Instance Assertion",
   "participants": [
     {

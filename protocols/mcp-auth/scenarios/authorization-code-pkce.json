@@ -3,6 +3,7 @@
   "title": "MCP Auth — Authorization Code with PKCE",
   "description": "The Model Context Protocol Authorization flow utilizing OAuth 2.1, PKCE, and Protected Resource Metadata for secure client-server communication.",
   "rfc": "MCP Auth Draft",
+  "specUrl": "https://modelcontextprotocol.io/specification/2025-11-25/basic/authorization",
   "category": "MCP Authorization",
   "participants": [
     {

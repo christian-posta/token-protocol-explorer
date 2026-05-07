@@ -71,6 +71,7 @@ export interface Scenario {
   title: string;
   description: string;
   rfc?: string;
+  specUrl?: string;
   category: string;
   participants: Participant[];
   steps: ProtocolStep[];

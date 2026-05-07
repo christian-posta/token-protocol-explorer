@@ -3,6 +3,7 @@
   "title": "Client Instance Assertion \u2014 SPIFFE Workload (SPIRE \u2192 OAuth)",
   "description": "A Kubernetes pod attested by SPIRE fetches a JWT-SVID from the SPIFFE Workload API, then exchanges it at a SPIFFE-OAuth adapter (Instance Issuer) to receive a re-minted client-instance+jwt. The re-minted assertion adds cnf.jkt (DPoP key binding), client_id, and the required typ \u2014 bridging SPIFFE workload identity into OAuth sender-constrained tokens. SPIRE's CredentialComposer cannot bind a workload-supplied public key into JWT-SVIDs during issuance (the API provides no mechanism for the workload to inject cnf.jkt at SVID mint time), so the adapter must independently verify key possession via a DPoP-style proof before embedding cnf.jkt. Without this proof step, a stolen SVID could be used with an arbitrary public key, binding the wrong key into the re-minted assertion.",
   "rfc": "IETF Draft",
+  "specUrl": "https://mcguinness.github.io/draft-mcguinness-oauth-client-instance-actor-assertion/draft-mcguinness-oauth-client-instance-actor-assertion.html",
   "category": "Client Instance Assertion",
   "participants": [
     {

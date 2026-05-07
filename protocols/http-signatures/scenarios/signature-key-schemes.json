@@ -3,6 +3,7 @@
   "title": "Signature-Key Header Schemes",
   "description": "Exploring the four key distribution schemes defined in draft-hardt-httpbis-signature-key. The Signature-Key header embeds or links to the public key required to verify the RFC 9421 signature.",
   "rfc": "Draft (Signature-Key)",
+  "specUrl": "https://datatracker.ietf.org/doc/draft-hardt-httpbis-signature-key/",
   "category": "HTTP Signatures",
   "participants": [
     {

@@ -3,6 +3,7 @@
   "title": "OAuth 1.0a — Three-Legged Flow",
   "description": "The complete OAuth 1.0a authorization code flow. Consumer obtains a Request Token, redirects the user to authorize, receives a verifier, exchanges for an Access Token, and makes a signed API call. Each step shows the full HMAC-SHA1 signature construction.",
   "rfc": "RFC 5849",
+  "specUrl": "https://datatracker.ietf.org/doc/html/rfc5849",
   "category": "OAuth 1.0a",
   "participants": [
     { "id": "consumer", "label": "Consumer App", "type": "client" },

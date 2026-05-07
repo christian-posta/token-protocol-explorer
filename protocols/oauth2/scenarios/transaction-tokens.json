@@ -3,6 +3,7 @@
   "title": "Transaction Tokens (Draft)",
   "description": "Demonstrating the IETF draft for Transaction Tokens (Txn-Tokens). Shows how a single, immutable token propagates user identity and authorization context securely down a multi-workload internal call chain.",
   "rfc": "Txn-Tokens Draft",
+  "specUrl": "https://datatracker.ietf.org/doc/draft-ietf-oauth-transaction-tokens/",
   "category": "OAuth 2.0",
   "participants": [
     {

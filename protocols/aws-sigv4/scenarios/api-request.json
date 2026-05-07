@@ -3,6 +3,7 @@
   "title": "AWS SigV4 — API Request",
   "description": "Authenticating an AWS API request using Signature Version 4. This scenario shows an STS GetCallerIdentity call, detailing the 4-step signing process.",
   "rfc": "AWS Docs",
+  "specUrl": "https://docs.aws.amazon.com/general/latest/gr/sigv4_signing.html",
   "category": "AWS SigV4",
   "participants": [
     {

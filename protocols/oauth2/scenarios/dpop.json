@@ -3,6 +3,7 @@
   "title": "OAuth 2.0 DPoP \u2014 Full Flow",
   "description": "Demonstrating Proof-of-Possession (DPoP) at the application layer. The client generates a DPoP proof to bind the access token to a private key, preventing token replay.",
   "rfc": "RFC 9449",
+  "specUrl": "https://datatracker.ietf.org/doc/html/rfc9449",
   "category": "OAuth 2.0 DPoP",
   "participants": [
     {

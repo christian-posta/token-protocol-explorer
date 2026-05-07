@@ -3,6 +3,7 @@
   "title": "HTTP Message Signatures",
   "description": "Demonstrating the core RFC 9421 specification. Shows how the Signature Base String is constructed using headers, pseudo-headers, and the strict newline-delimited dictionary format.",
   "rfc": "RFC 9421",
+  "specUrl": "https://datatracker.ietf.org/doc/html/rfc9421",
   "category": "HTTP Signatures",
   "participants": [
     {

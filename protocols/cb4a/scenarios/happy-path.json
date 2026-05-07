@@ -3,6 +3,7 @@
   "title": "CB4A — Credential Broker for Agents",
   "description": "Model B (Token Minting): An AI agent obtains a short-lived, DPoP-bound access token via the Credential Broker for Agents protocol. A Policy Decision Point (PDP) and Credential Delivery Point (CDP) collaborate so that neither holds unilateral power — the PDP never touches credentials, and the CDP never makes policy decisions.",
   "rfc": "draft-hartman-cb4a-00",
+  "specUrl": "https://datatracker.ietf.org/doc/draft-hartman-credential-broker-4-agents/",
   "category": "CB4A",
   "participants": [
     {

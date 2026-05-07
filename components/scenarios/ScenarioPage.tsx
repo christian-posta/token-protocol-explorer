@@ -144,9 +144,9 @@ export function ScenarioPage({ scenario }: ScenarioPageProps) {
               {scenario.description}
             </p>
           </div>
-          {scenario.rfc && (
+          {scenario.rfc && scenario.specUrl && (
             <a
-              href={`https://datatracker.ietf.org/doc/html/${scenario.rfc.toLowerCase().replace(" ", "")}`}
+              href={scenario.specUrl}
               target="_blank"
               rel="noopener noreferrer"
               className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"

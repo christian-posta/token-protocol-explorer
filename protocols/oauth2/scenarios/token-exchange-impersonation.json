@@ -3,6 +3,7 @@
   "title": "Token Exchange — Impersonation",
   "description": "Demonstrating RFC 8693 Token Exchange for impersonation. An admin with a 'may_act' privilege exchanges their token for a clean token belonging to a target user.",
   "rfc": "RFC 8693",
+  "specUrl": "https://datatracker.ietf.org/doc/html/rfc8693",
   "category": "OAuth 2.0",
   "participants": [
     {

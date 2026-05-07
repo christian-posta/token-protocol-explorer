@@ -3,6 +3,7 @@
   "title": "Token Exchange — Delegation",
   "description": "Demonstrating RFC 8693 Token Exchange for delegation. A frontend passes a token to an API, which exchanges it to call a downstream service, building a chain of custody using nested 'act' claims.",
   "rfc": "RFC 8693",
+  "specUrl": "https://datatracker.ietf.org/doc/html/rfc8693",
   "category": "OAuth 2.0",
   "participants": [
     {
