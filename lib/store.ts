@@ -62,6 +62,11 @@ export const useScenarioStore = create<ScenarioState>()(
     }),
     {
       name: "token-explorer-scenario",
+      // skipHydration prevents persist from reading localStorage during SSR,
+      // which avoids React hydration mismatches between server and client.
+      // Rehydration is triggered manually via useScenarioStore.persist.rehydrate()
+      // in a client-side useEffect (see ScenarioPage).
+      skipHydration: true,
       partialize: (state) => ({
         detailsPanelWidthPx: state.detailsPanelWidthPx,
       }),

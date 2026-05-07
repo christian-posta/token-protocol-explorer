@@ -1,0 +1,367 @@
+{
+  "id": "id-jag-cross-domain",
+  "title": "ID-JAG — Cross-Domain Access (Xaa)",
+  "description": "An ACME Corp employee uses their internal corporate identity to securely access the SaaS API. The Identity Assertion Authorization Grant (ID-JAG) lets ACME's IdP vouch for the user's identity without ever issuing external service tokens — each trust domain remains sovereign.",
+  "rfc": "draft-ietf-oauth-identity-assertion-authz-grant",
+  "specUrl": "https://datatracker.ietf.org/doc/draft-ietf-oauth-identity-assertion-authz-grant/",
+  "category": "ID-JAG",
+  "participants": [
+    { "id": "user", "label": "ACME Employee", "type": "user" },
+    { "id": "client", "label": "ACME CRM App", "type": "client", "port": 3000 },
+    { "id": "internal-idp", "label": "ACME IdP", "type": "idp" },
+    { "id": "external-authz", "label": "SaaS IdP", "type": "idp" },
+    { "id": "external-api", "label": "SaaS API", "type": "server" }
+  ],
+  "steps": [
+    {
+      "step": 1,
+      "from": "client",
+      "to": "internal-idp",
+      "label": "GET /authorize (OIDC)",
+      "method": "GET",
+      "url": "https://idp.acme.example/authorize?response_type=code&client_id=acme-crm-app&scope=openid%20email%20profile&redirect_uri=https%3A%2F%2Fcrm.acme.example%2Fcallback&state=xvz1evFS4wEEptTbUs9SDg&nonce=n-0S6_WzA2Mj",
+      "request_headers": {
+        "Host": "idp.acme.example",
+        "User-Agent": "Mozilla/5.0 (ACME-CRM/1.0)"
+      },
+      "request_body": null,
+      "response_status": 302,
+      "response_headers": {
+        "Location": "https://idp.acme.example/login?client_id=acme-crm-app&session=sess-7xk9pqm2"
+      },
+      "response_body": null,
+      "artifacts": [],
+      "tokens": [],
+      "explanation": "The ACME CRM App redirects the employee's browser to ACME's Identity Provider to begin an OpenID Connect authorization code flow. The IdP returns a 302 redirect to its login page, where the employee will authenticate with corporate credentials.",
+      "annotations": [
+        "scope=openid ensures this is an OIDC flow, which will return an ID Token alongside the access token.",
+        "The nonce (n-0S6_WzA2Mj) is a one-time value included in the authorization request to prevent replay attacks — the IdP will embed it in the returned ID Token.",
+        "The state parameter ties the authorization response back to this specific browser session, preventing CSRF.",
+        "ID-JAG §3.1: The client must first obtain an ID Token from the user's internal IdP before it can request an ID-JAG."
+      ]
+    },
+    {
+      "step": 2,
+      "from": "user",
+      "to": "internal-idp",
+      "label": "POST /login (MFA)",
+      "method": "POST",
+      "url": "https://idp.acme.example/login",
+      "request_headers": {
+        "Host": "idp.acme.example",
+        "Content-Type": "application/x-www-form-urlencoded"
+      },
+      "request_body": "username=alice%40acme.example&password=%5BREDACTED%5D&otp_code=847291&session=sess-7xk9pqm2",
+      "response_status": 302,
+      "response_headers": {
+        "Location": "https://crm.acme.example/callback?code=SplxlOBeZQQYbYS6WxSbIA&state=xvz1evFS4wEEptTbUs9SDg",
+        "Set-Cookie": "acme_session=abc123; Secure; HttpOnly; SameSite=Lax"
+      },
+      "response_body": null,
+      "artifacts": [],
+      "tokens": [],
+      "explanation": "The employee submits their corporate credentials plus a time-based OTP code for MFA. ACME's IdP validates both factors, creates a session, and redirects the browser back to the CRM app's callback URL with a short-lived authorization code.",
+      "annotations": [
+        "The amr (Authentication Methods References) claim in the resulting ID Token will reflect both 'pwd' (password) and 'mfa' (MFA), providing strong authentication assurance that propagates all the way to the SaaS API.",
+        "The authorization code (SplxlOBeZQQYbYS6WxSbIA) is single-use and short-lived (typically 60–600 seconds).",
+        "The state parameter in the redirect exactly matches the state from Step 1 — the client verifies this to prevent CSRF attacks.",
+        "This browser-facing login step is entirely within ACME's trust domain. The SaaS provider is not involved and never sees the user's credentials."
+      ]
+    },
+    {
+      "step": 3,
+      "from": "client",
+      "to": "internal-idp",
+      "label": "POST /token (code → ID Token)",
+      "method": "POST",
+      "url": "https://idp.acme.example/token",
+      "request_headers": {
+        "Host": "idp.acme.example",
+        "Content-Type": "application/x-www-form-urlencoded",
+        "Authorization": "Basic YWNtZS1jcm0tYXBwOnNlY3JldC1rZXktMTIz"
+      },
+      "request_body": "grant_type=authorization_code&code=SplxlOBeZQQYbYS6WxSbIA&redirect_uri=https%3A%2F%2Fcrm.acme.example%2Fcallback",
+      "response_status": 200,
+      "response_headers": {
+        "Content-Type": "application/json",
+        "Cache-Control": "no-store"
+      },
+      "response_body": {
+        "access_token": "acme_internal_at_9f4k2m7p3x...",
+        "token_type": "Bearer",
+        "id_token": "eyJ0eXAiOiJKV1QiLCJhbGciOiJSUzI1NiIsImtpZCI6ImFjbWUta2V5LTEifQ.eyJpc3MiOiJodHRwczovL2lkcC5hY21lLmV4YW1wbGUiLCJzdWIiOiJhbGljZUBhY21lLmV4YW1wbGUiLCJhdWQiOiJhY21lLWNybS1hcHAiLCJleHAiOjE3MTUxMDAwMDAsImlhdCI6MTcxNTA5NjQwMCwiYXV0aF90aW1lIjoxNzE1MDk2NDAwLCJub25jZSI6Im4tMFM2X1d6QTJNaiIsImFtciI6WyJwd2QiLCJtZmEiXSwiZW1haWwiOiJhbGljZUBhY21lLmV4YW1wbGUifQ.ACME_IDP_RS256_SIGNATURE",
+        "expires_in": 3600,
+        "scope": "openid email profile"
+      },
+      "artifacts": [
+        {
+          "type": "rsa-sha256",
+          "raw_input": "eyJ0eXAiOiJKV1QiLCJhbGciOiJSUzI1NiIsImtpZCI6ImFjbWUta2V5LTEifQ.eyJpc3MiOiJodHRwczovL2lkcC5hY21lLmV4YW1wbGUiLCJzdWIiOiJhbGljZUBhY21lLmV4YW1wbGUiLCJhdWQiOiJhY21lLWNybS1hcHAiLCJleHAiOjE3MTUxMDAwMDAsImlhdCI6MTcxNTA5NjQwMCwiYXV0aF90aW1lIjoxNzE1MDk2NDAwLCJub25jZSI6Im4tMFM2X1d6QTJNaiIsImFtciI6WyJwd2QiLCJtZmEiXSwiZW1haWwiOiJhbGljZUBhY21lLmV4YW1wbGUifQ",
+          "signing_key_hint": "ACME IdP RSA Private Key (kid: acme-key-1)",
+          "final_output": "ACME_IDP_RS256_SIGNATURE",
+          "steps": [
+            {
+              "label": "1. Build JWT Signing Input",
+              "value": "BASE64URL(header) + '.' + BASE64URL(payload)\n\nHeader (decoded):\n{\n  \"typ\": \"JWT\",\n  \"alg\": \"RS256\",\n  \"kid\": \"acme-key-1\"\n}"
+            },
+            {
+              "label": "2. ID Token Payload (Decoded)",
+              "value": "{\n  \"iss\": \"https://idp.acme.example\",\n  \"sub\": \"alice@acme.example\",\n  \"aud\": \"acme-crm-app\",\n  \"exp\": 1715100000,\n  \"iat\": 1715096400,\n  \"auth_time\": 1715096400,\n  \"nonce\": \"n-0S6_WzA2Mj\",\n  \"amr\": [\"pwd\", \"mfa\"],\n  \"email\": \"alice@acme.example\"\n}"
+            },
+            {
+              "label": "3. Sign with RSA-SHA256",
+              "value": "RSA-SHA256(\n  key = ACME_IDP_RSA_PRIVATE_KEY (kid: acme-key-1),\n  data = BASE64URL(header) + '.' + BASE64URL(payload)\n)\n→ raw bytes → BASE64URL\n→ ACME_IDP_RS256_SIGNATURE\n\nPublic key available at:\nhttps://idp.acme.example/.well-known/jwks.json"
+            }
+          ]
+        }
+      ],
+      "tokens": [
+        {
+          "name": "ACME ID Token",
+          "typ": "JWT",
+          "raw": "eyJ0eXAiOiJKV1QiLCJhbGciOiJSUzI1NiIsImtpZCI6ImFjbWUta2V5LTEifQ.eyJpc3MiOiJodHRwczovL2lkcC5hY21lLmV4YW1wbGUiLCJzdWIiOiJhbGljZUBhY21lLmV4YW1wbGUiLCJhdWQiOiJhY21lLWNybS1hcHAiLCJleHAiOjE3MTUxMDAwMDAsImlhdCI6MTcxNTA5NjQwMCwiYXV0aF90aW1lIjoxNzE1MDk2NDAwLCJub25jZSI6Im4tMFM2X1d6QTJNaiIsImFtciI6WyJwd2QiLCJtZmEiXSwiZW1haWwiOiJhbGljZUBhY21lLmV4YW1wbGUifQ.ACME_IDP_RS256_SIGNATURE",
+          "header": {
+            "typ": "JWT",
+            "alg": "RS256",
+            "kid": "acme-key-1"
+          },
+          "payload": {
+            "iss": "https://idp.acme.example",
+            "sub": "alice@acme.example",
+            "aud": "acme-crm-app",
+            "exp": 1715100000,
+            "iat": 1715096400,
+            "auth_time": 1715096400,
+            "nonce": "n-0S6_WzA2Mj",
+            "amr": ["pwd", "mfa"],
+            "email": "alice@acme.example"
+          },
+          "signature_b64": "ACME_IDP_RS256_SIGNATURE"
+        }
+      ],
+      "explanation": "The CRM app exchanges the short-lived authorization code for an ID Token from ACME's IdP. The ID Token is a signed JWT that cryptographically attests the user's identity, authentication time, and MFA usage. This token will be used as the subject_token in the ID-JAG exchange in the next step.",
+      "annotations": [
+        "The ID Token is signed with ACME's RSA private key (kid: acme-key-1). Any party can verify it using ACME's public JWKS at https://idp.acme.example/.well-known/jwks.json.",
+        "The nonce in the ID Token matches the nonce from Step 1, proving this token was issued in response to this specific authorization request and was not replayed.",
+        "amr=[\"pwd\",\"mfa\"] provides authentication assurance context — the user authenticated with both a password and a second factor. This context will propagate through the ID-JAG into the SaaS access token.",
+        "The internal access_token (acme_internal_at_...) is scoped only to ACME's own services. It cannot be used at the SaaS API and is NOT sent to the SaaS provider."
+      ]
+    },
+    {
+      "step": 4,
+      "from": "client",
+      "to": "internal-idp",
+      "label": "POST /token (→ ID-JAG)",
+      "method": "POST",
+      "url": "https://idp.acme.example/token",
+      "request_headers": {
+        "Host": "idp.acme.example",
+        "Content-Type": "application/x-www-form-urlencoded",
+        "Authorization": "Basic YWNtZS1jcm0tYXBwOnNlY3JldC1rZXktMTIz"
+      },
+      "request_body": "grant_type=urn%3Aietf%3Aparams%3Aoauth%3Agrant-type%3Atoken-exchange&requested_token_type=urn%3Aietf%3Aparams%3Aoauth%3Atoken-type%3Aid-jag&subject_token=eyJ0eXAiOiJKV1QiLCJhbGciOiJSUzI1NiIsImtpZCI6ImFjbWUta2V5LTEifQ.eyJpc3MiOiJodHRwczovL2lkcC5hY21lLmV4YW1wbGUi...&subject_token_type=urn%3Aietf%3Aparams%3Aoauth%3Atoken-type%3Aid_token&audience=https%3A%2F%2Fauthz.xaa.example&resource=https%3A%2F%2Fapi.xaa.example&scope=projects.read%20projects.write",
+      "response_status": 200,
+      "response_headers": {
+        "Content-Type": "application/json",
+        "Cache-Control": "no-store"
+      },
+      "response_body": {
+        "access_token": "eyJ0eXAiOiJvYXV0aC1pZC1qYWcrand0IiwiYWxnIjoiUlMyNTYiLCJraWQiOiJhY21lLWtleS0xIn0.eyJqdGkiOiJkOWY4YTdiNi1jNWU0LTNkMmYtMWEwYi05ZThjN2Q2ZTVmNGEiLCJpc3MiOiJodHRwczovL2lkcC5hY21lLmV4YW1wbGUiLCJzdWIiOiJhbGljZUBhY21lLmV4YW1wbGUiLCJhdWQiOiJodHRwczovL2F1dGh6LnhhYS5leGFtcGxlIiwiY2xpZW50X2lkIjoiYWNtZS1jcm0tYXBwIiwiZXhwIjoxNzE1MDk3MDAwLCJpYXQiOjE3MTUwOTY0MDAsInJlc291cmNlIjoiaHR0cHM6Ly9hcGkueGFhLmV4YW1wbGUiLCJzY29wZSI6InByb2plY3RzLnJlYWQgcHJvamVjdHMud3JpdGUiLCJhdXRoX3RpbWUiOjE3MTUwOTY0MDAsImFtciI6WyJwd2QiLCJtZmEiXX0.ACME_IDP_ID_JAG_SIGNATURE",
+        "issued_token_type": "urn:ietf:params:oauth:token-type:id-jag",
+        "token_type": "N_A",
+        "scope": "projects.read projects.write",
+        "expires_in": 600
+      },
+      "artifacts": [
+        {
+          "type": "rsa-sha256",
+          "raw_input": "eyJ0eXAiOiJvYXV0aC1pZC1qYWcrand0IiwiYWxnIjoiUlMyNTYiLCJraWQiOiJhY21lLWtleS0xIn0.eyJqdGkiOiJkOWY4YTdiNi1jNWU0LTNkMmYtMWEwYi05ZThjN2Q2ZTVmNGEiLCJpc3MiOiJodHRwczovL2lkcC5hY21lLmV4YW1wbGUiLCJzdWIiOiJhbGljZUBhY21lLmV4YW1wbGUiLCJhdWQiOiJodHRwczovL2F1dGh6LnhhYS5leGFtcGxlIiwiY2xpZW50X2lkIjoiYWNtZS1jcm0tYXBwIiwiZXhwIjoxNzE1MDk3MDAwLCJpYXQiOjE3MTUwOTY0MDAsInJlc291cmNlIjoiaHR0cHM6Ly9hcGkueGFhLmV4YW1wbGUiLCJzY29wZSI6InByb2plY3RzLnJlYWQgcHJvamVjdHMud3JpdGUiLCJhdXRoX3RpbWUiOjE3MTUwOTY0MDAsImFtciI6WyJwd2QiLCJtZmEiXX0",
+          "signing_key_hint": "ACME IdP RSA Private Key (kid: acme-key-1)",
+          "final_output": "ACME_IDP_ID_JAG_SIGNATURE",
+          "steps": [
+            {
+              "label": "1. ID-JAG Header (Decoded)",
+              "value": "{\n  \"typ\": \"oauth-id-jag+jwt\",\n  \"alg\": \"RS256\",\n  \"kid\": \"acme-key-1\"\n}\n\nThe typ=\"oauth-id-jag+jwt\" signals this is an ID-JAG,\nnot a regular access token or ID Token.\nReceivers MUST reject it if used as a Bearer token directly."
+            },
+            {
+              "label": "2. ID-JAG Payload (Decoded)",
+              "value": "{\n  \"jti\": \"d9f8a7b6-c5e4-3d2f-1a0b-9e8c7d6e5f4a\",\n  \"iss\": \"https://idp.acme.example\",\n  \"sub\": \"alice@acme.example\",\n  \"aud\": \"https://authz.xaa.example\",\n  \"client_id\": \"acme-crm-app\",\n  \"exp\": 1715097000,\n  \"iat\": 1715096400,\n  \"resource\": \"https://api.xaa.example\",\n  \"scope\": \"projects.read projects.write\",\n  \"auth_time\": 1715096400,\n  \"amr\": [\"pwd\", \"mfa\"]\n}"
+            },
+            {
+              "label": "3. Sign with RSA-SHA256",
+              "value": "RSA-SHA256(\n  key = ACME_IDP_RSA_PRIVATE_KEY (kid: acme-key-1),\n  data = BASE64URL(header) + '.' + BASE64URL(payload)\n)\n→ raw bytes → BASE64URL\n→ ACME_IDP_ID_JAG_SIGNATURE\n\nVerifiable via:\nhttps://idp.acme.example/.well-known/jwks.json"
+            }
+          ]
+        }
+      ],
+      "tokens": [
+        {
+          "name": "ID-JAG (Identity Assertion Authorization Grant)",
+          "typ": "oauth-id-jag+jwt",
+          "raw": "eyJ0eXAiOiJvYXV0aC1pZC1qYWcrand0IiwiYWxnIjoiUlMyNTYiLCJraWQiOiJhY21lLWtleS0xIn0.eyJqdGkiOiJkOWY4YTdiNi1jNWU0LTNkMmYtMWEwYi05ZThjN2Q2ZTVmNGEiLCJpc3MiOiJodHRwczovL2lkcC5hY21lLmV4YW1wbGUiLCJzdWIiOiJhbGljZUBhY21lLmV4YW1wbGUiLCJhdWQiOiJodHRwczovL2F1dGh6LnhhYS5leGFtcGxlIiwiY2xpZW50X2lkIjoiYWNtZS1jcm0tYXBwIiwiZXhwIjoxNzE1MDk3MDAwLCJpYXQiOjE3MTUwOTY0MDAsInJlc291cmNlIjoiaHR0cHM6Ly9hcGkueGFhLmV4YW1wbGUiLCJzY29wZSI6InByb2plY3RzLnJlYWQgcHJvamVjdHMud3JpdGUiLCJhdXRoX3RpbWUiOjE3MTUwOTY0MDAsImFtciI6WyJwd2QiLCJtZmEiXX0.ACME_IDP_ID_JAG_SIGNATURE",
+          "header": {
+            "typ": "oauth-id-jag+jwt",
+            "alg": "RS256",
+            "kid": "acme-key-1"
+          },
+          "payload": {
+            "jti": "d9f8a7b6-c5e4-3d2f-1a0b-9e8c7d6e5f4a",
+            "iss": "https://idp.acme.example",
+            "sub": "alice@acme.example",
+            "aud": "https://authz.xaa.example",
+            "client_id": "acme-crm-app",
+            "exp": 1715097000,
+            "iat": 1715096400,
+            "resource": "https://api.xaa.example",
+            "scope": "projects.read projects.write",
+            "auth_time": 1715096400,
+            "amr": ["pwd", "mfa"]
+          },
+          "signature_b64": "ACME_IDP_ID_JAG_SIGNATURE"
+        }
+      ],
+      "explanation": "The CRM app performs an RFC 8693 Token Exchange against ACME's IdP, requesting the ID-JAG token type. By presenting the user's ID Token as the subject_token and specifying the SaaS IdP as the audience, ACME's IdP mints a short-lived, narrowly-scoped identity assertion JWT. This is the core cryptographic artifact of the entire protocol — it carries the user's authenticated identity across trust domain boundaries.",
+      "annotations": [
+        "grant_type=urn:ietf:params:oauth:grant-type:token-exchange — standard RFC 8693 Token Exchange.",
+        "requested_token_type=urn:ietf:params:oauth:token-type:id-jag — requests the ID-JAG format specifically; ACME's IdP returns an identity assertion, NOT an access token for the SaaS provider.",
+        "aud=https://authz.xaa.example — the ID-JAG is audience-restricted to the SaaS IdP only. It CANNOT be presented to any other service.",
+        "resource=https://api.xaa.example — further narrows the grant; the ID-JAG is only valid to obtain tokens scoped to this specific API.",
+        "token_type=N_A in the response indicates the ID-JAG must NOT be used directly as a Bearer token — it is a grant credential, not an access token.",
+        "expires_in=600 seconds — the ID-JAG is intentionally short-lived (10 min). ACME's IdP does not issue long-lived credentials for external services.",
+        "jti (JWT ID) makes each ID-JAG unique. the SaaS IdP SHOULD track seen jti values to prevent replay attacks."
+      ]
+    },
+    {
+      "step": 5,
+      "from": "client",
+      "to": "external-authz",
+      "label": "POST /token (ID-JAG → AT)",
+      "method": "POST",
+      "url": "https://authz.xaa.example/oauth2/token",
+      "request_headers": {
+        "Host": "authz.xaa.example",
+        "Content-Type": "application/x-www-form-urlencoded"
+      },
+      "request_body": "grant_type=urn%3Aietf%3Aparams%3Aoauth%3Agrant-type%3Ajwt-bearer&assertion=eyJ0eXAiOiJvYXV0aC1pZC1qYWcrand0IiwiYWxnIjoiUlMyNTYiLCJraWQiOiJhY21lLWtleS0xIn0.eyJqdGkiOiJkOWY4YTdiNi1jNWU0LTNkMmYtMWEwYi05ZThjN2Q2ZTVmNGEi...ACME_IDP_ID_JAG_SIGNATURE&client_id=xaa-acme-partner",
+      "response_status": 200,
+      "response_headers": {
+        "Content-Type": "application/json",
+        "Cache-Control": "no-store"
+      },
+      "response_body": {
+        "access_token": "eyJ0eXAiOiJhdCtqd3QiLCJhbGciOiJSUzI1NiIsImtpZCI6InhhYS1rZXktMSJ9.eyJpc3MiOiJodHRwczovL2F1dGh6LnhhYS5leGFtcGxlIiwic3ViIjoiYWxpY2VAYWNtZS5leGFtcGxlIiwiYXVkIjoiaHR0cHM6Ly9hcGkueGFhLmV4YW1wbGUiLCJleHAiOjE3MTUxODMwMDAsImlhdCI6MTcxNTA5NjQwMCwianRpIjoieGFhLWF0LWExYjJjM2Q0Iiwic2NvcGUiOiJwcm9qZWN0cy5yZWFkIHByb2plY3RzLndyaXRlIiwiY2xpZW50X2lkIjoieGFhLWFjbWUtcGFydG5lciJ9.XAA_AUTHZ_RS256_SIGNATURE",
+        "token_type": "Bearer",
+        "expires_in": 86400,
+        "scope": "projects.read projects.write"
+      },
+      "artifacts": [
+        {
+          "type": "rsa-sha256",
+          "raw_input": "SaaS IdP validates the ID-JAG and issues a native access token",
+          "signing_key_hint": "Verified with ACME IdP Public Key (kid: acme-key-1) from https://idp.acme.example/.well-known/jwks.json",
+          "final_output": "XAA_AUTHZ_RS256_SIGNATURE",
+          "steps": [
+            {
+              "label": "1. Discover ACME's Public Keys",
+              "value": "GET https://idp.acme.example/.well-known/jwks.json\n→ Find key with kid=\"acme-key-1\"\n→ Extract RSA public key (n, e parameters)\n\nthe SaaS IdP caches this key per standard JWKS TTL."
+            },
+            {
+              "label": "2. Verify ID-JAG Signature",
+              "value": "RSA-SHA256 VERIFY(\n  public_key = ACME_IDP_RSA_PUBLIC_KEY (kid: acme-key-1),\n  signature  = ACME_IDP_ID_JAG_SIGNATURE,\n  data       = BASE64URL(header) + '.' + BASE64URL(payload)\n)\n→ VALID ✓"
+            },
+            {
+              "label": "3. Validate ID-JAG Claims",
+              "value": "✓ iss: https://idp.acme.example  — in the SaaS provider's trusted issuer list\n✓ aud: https://authz.xaa.example — matches SaaS IdP own identifier\n✓ exp: 1715097000               — not yet expired\n✓ resource: https://api.xaa.example — valid target API\n✓ jti: d9f8a7b6-c5e4-3d2f-...  — not seen before (replay check)\n✓ amr: [pwd, mfa]              — meets MFA policy requirement"
+            },
+            {
+              "label": "4. Resolve Subject + Apply Policy",
+              "value": "sub = alice@acme.example\n→ Lookup in SaaS identity mapping table\n→ Found: local_saas_id = usr_saas_4821\n→ Evaluate authz policy:\n   projects.read  → GRANTED ✓\n   projects.write → GRANTED ✓\n→ Proceed to issue access token"
+            },
+            {
+              "label": "5. Issue SaaS Access Token",
+              "value": "Header:\n{\n  \"typ\": \"at+jwt\",\n  \"alg\": \"RS256\",\n  \"kid\": \"xaa-key-1\"\n}\n\nPayload:\n{\n  \"iss\": \"https://authz.xaa.example\",\n  \"sub\": \"alice@acme.example\",\n  \"aud\": \"https://api.xaa.example\",\n  \"exp\": 1715183000,\n  \"iat\": 1715096400,\n  \"jti\": \"xaa-at-a1b2c3d4\",\n  \"scope\": \"projects.read projects.write\",\n  \"client_id\": \"xaa-acme-partner\"\n}\n\nSigned with XAA_AUTHZ_RS256_SIGNATURE (the SaaS provider's own private key)"
+            }
+          ]
+        }
+      ],
+      "tokens": [
+        {
+          "name": "SaaS Access Token",
+          "typ": "at+jwt",
+          "raw": "eyJ0eXAiOiJhdCtqd3QiLCJhbGciOiJSUzI1NiIsImtpZCI6InhhYS1rZXktMSJ9.eyJpc3MiOiJodHRwczovL2F1dGh6LnhhYS5leGFtcGxlIiwic3ViIjoiYWxpY2VAYWNtZS5leGFtcGxlIiwiYXVkIjoiaHR0cHM6Ly9hcGkueGFhLmV4YW1wbGUiLCJleHAiOjE3MTUxODMwMDAsImlhdCI6MTcxNTA5NjQwMCwianRpIjoieGFhLWF0LWExYjJjM2Q0Iiwic2NvcGUiOiJwcm9qZWN0cy5yZWFkIHByb2plY3RzLndyaXRlIiwiY2xpZW50X2lkIjoieGFhLWFjbWUtcGFydG5lciJ9.XAA_AUTHZ_RS256_SIGNATURE",
+          "header": {
+            "typ": "at+jwt",
+            "alg": "RS256",
+            "kid": "xaa-key-1"
+          },
+          "payload": {
+            "iss": "https://authz.xaa.example",
+            "sub": "alice@acme.example",
+            "aud": "https://api.xaa.example",
+            "exp": 1715183000,
+            "iat": 1715096400,
+            "jti": "xaa-at-a1b2c3d4",
+            "scope": "projects.read projects.write",
+            "client_id": "xaa-acme-partner"
+          },
+          "signature_b64": "XAA_AUTHZ_RS256_SIGNATURE"
+        }
+      ],
+      "explanation": "The client presents the ID-JAG to the SaaS IdP using the JWT Bearer grant (RFC 7523). the SaaS IdP independently validates the ID-JAG — it fetches ACME's public keys, verifies the signature, validates all claims, maps the user to a local account, and applies its own authorization policies. If everything passes, it issues a SaaS-native access token signed with the SaaS provider's own private key. The trust boundary is fully respected: ACME never issued a token for the SaaS API; the SaaS IdP made that decision independently.",
+      "annotations": [
+        "grant_type=urn:ietf:params:oauth:grant-type:jwt-bearer (RFC 7523) — the standard mechanism for presenting a JWT assertion as an authorization grant.",
+        "the SaaS IdP must be pre-configured with ACME's IdP as a trusted issuer. This trust relationship is established out-of-band (e.g., via partnership agreement and OIDC discovery).",
+        "The sub claim (alice@acme.example) flows unchanged from ID Token → ID-JAG → Access Token, preserving user identity across trust domains without ACME's IdP being involved at API call time.",
+        "The access token is issued by https://authz.xaa.example and signed with the SaaS provider's own private key — it is the SaaS provider's sovereign token, not a relayed ACME token.",
+        "Authentication context (amr=[pwd,mfa]) from the original login propagates through, allowing the SaaS API to enforce step-up auth requirements if needed.",
+        "The ID-JAG (Step 4 response) is consumed and discarded after this exchange — it is single-use by design."
+      ]
+    },
+    {
+      "step": 6,
+      "from": "client",
+      "to": "external-api",
+      "label": "GET /projects (Bearer AT)",
+      "method": "GET",
+      "url": "https://api.xaa.example/v1/projects",
+      "request_headers": {
+        "Host": "api.xaa.example",
+        "Authorization": "Bearer eyJ0eXAiOiJhdCtqd3QiLCJhbGciOiJSUzI1NiIsImtpZCI6InhhYS1rZXktMSJ9...",
+        "Accept": "application/json"
+      },
+      "request_body": null,
+      "response_status": 200,
+      "response_headers": {
+        "Content-Type": "application/json",
+        "X-Request-Id": "req-7f3a2c1d"
+      },
+      "response_body": {
+        "projects": [
+          {
+            "id": "proj-001",
+            "name": "ACME-SaaS Integration",
+            "status": "active",
+            "owner": "alice@acme.example"
+          },
+          {
+            "id": "proj-002",
+            "name": "Partner Dashboard",
+            "status": "active",
+            "owner": "bob@xaa.example"
+          }
+        ],
+        "total": 2
+      },
+      "artifacts": [],
+      "tokens": [],
+      "explanation": "The ACME CRM app calls the SaaS API using the SaaS-issued access token as a standard Bearer token. the SaaS API validates the JWT using the SaaS provider's own public keys — no communication with ACME's IdP is required at this point. The user's identity (alice@acme.example) is visible in the token's sub claim, enabling the SaaS API to enforce fine-grained per-user authorization.",
+      "annotations": [
+        "the SaaS API validates the access token locally using https://authz.xaa.example/.well-known/jwks.json — entirely within the SaaS provider's trust domain. ACME's IdP is not contacted.",
+        "ACME's IdP played no role in this API call. The identity assertion was fully 'consumed' in Step 5 when the access token was issued.",
+        "The sub claim (alice@acme.example) lets the SaaS API enforce per-user policies, quota limits, and audit logs — even though Alice is an ACME Corp user, not a native SaaS user.",
+        "scope=projects.read projects.write constrains what Alice's token can do — this scope was negotiated during the ID-JAG request in Step 4 and honored by the SaaS IdP in Step 5.",
+        "This final step is standard OAuth 2.0 Bearer token usage (RFC 6750). The entire cross-domain complexity was resolved before reaching this call."
+      ]
+    }
+  ]
+}

@@ -81,6 +81,13 @@ const NAV: NavSection[] = [
       { label: "SPIFFE Workload (SPIRE → OAuth)", href: "/client-instance-assertion/spiffe-workload" },
     ],
   },
+  {
+    title: "ID-JAG (Xaa)",
+    color: "text-sky-400",
+    items: [
+      { label: "Cross-Domain Access (Xaa)", href: "/id-jag/cross-domain" },
+    ],
+  },
 ];
 
 function SidebarSection({ section, defaultOpen }: { section: NavSection; defaultOpen: boolean }) {

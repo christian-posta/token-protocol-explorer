@@ -37,6 +37,12 @@ export function ScenarioPage({ scenario }: ScenarioPageProps) {
   const detailsWidthRef = useRef(detailsPanelWidthPx);
   const { currentStep, setCurrentStep, reset } = useScenarioStore();
 
+  // Trigger persist rehydration on the client (store uses skipHydration: true
+  // to prevent SSR hydration mismatches).
+  useEffect(() => {
+    useScenarioStore.persist.rehydrate();
+  }, []);
+
   useEffect(() => {
     detailsWidthRef.current = detailsPanelWidthPx;
   }, [detailsPanelWidthPx]);

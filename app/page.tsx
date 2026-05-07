@@ -112,6 +112,19 @@ const PROTOCOLS = [
       { label: "Protocol Explorer", href: process.env.NEXT_PUBLIC_AAUTH_URL || "https://aauth-implementation.vercel.app", external: true },
     ],
   },
+  {
+    id: "id-jag",
+    name: "ID-JAG (Xaa)",
+    rfc: "IETF Draft",
+    rfcUrl: "https://datatracker.ietf.org/doc/draft-ietf-oauth-identity-assertion-authz-grant/",
+    accent: "border-sky-500/35 hover:border-sky-500/55",
+    iconWrap: "bg-sky-500/15 text-sky-400",
+    description:
+      "Identity Assertion Authorization Grant — a cross-trust-domain protocol enabling users to access external services using their internal corporate identity. The internal IdP vouches for the user; the SaaS IdP independently decides whether to grant access.",
+    scenarios: [
+      { label: "Cross-Domain Access (Xaa)", href: "/id-jag/cross-domain" },
+    ],
+  },
 ];
 
 export default function HomePage() {
