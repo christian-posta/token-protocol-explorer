@@ -36,12 +36,30 @@ const PROTOCOLS = [
     accent: "border-indigo-500/35 hover:border-indigo-500/55",
     iconWrap: "bg-indigo-500/15 text-indigo-400",
     description:
-      "The industry-standard authorization framework. Explore advanced extension profiles like Proof-of-Possession (DPoP), PKCE, and token exchange.",
+      "The industry-standard authorization framework. Explore the foundational Authorization Code grant with PKCE, Device Authorization for CLIs and IoT, advanced DPoP token binding, and token exchange patterns.",
     scenarios: [
+      { label: "Authorization Code + PKCE", href: "/oauth2/authorization-code" },
+      { label: "Device Authorization (RFC 8628)", href: "/oauth2/device-authorization" },
+      { label: "Refresh Token Grant", href: "/oauth2/refresh-token" },
+      { label: "PAR (RFC 9126)", href: "/oauth2/par" },
+      { label: "RAR (RFC 9396)", href: "/oauth2/rar" },
       { label: "DPoP (RFC 9449)", href: "/oauth2/dpop" },
       { label: "Token Exchange: Delegation", href: "/oauth2/token-exchange-delegation" },
       { label: "Token Exchange: Impersonation", href: "/oauth2/token-exchange-impersonation" },
       { label: "Txn-Tokens (Draft)", href: "/oauth2/transaction-tokens" },
+    ],
+  },
+  {
+    id: "oidc",
+    name: "OpenID Connect",
+    rfc: "OIDC Core 1.0",
+    rfcUrl: "https://openid.net/specs/openid-connect-core-1_0.html",
+    accent: "border-violet-500/35 hover:border-violet-500/55",
+    iconWrap: "bg-violet-500/15 text-violet-400",
+    description:
+      "The identity layer on top of OAuth 2.0. Where OAuth answers 'what can this client do?', OIDC answers 'who is this user?'. Introduces the ID Token, nonce, at_hash binding, and the UserInfo endpoint.",
+    scenarios: [
+      { label: "Authorization Code Flow", href: "/oidc/basic-flow" },
     ],
   },
   {

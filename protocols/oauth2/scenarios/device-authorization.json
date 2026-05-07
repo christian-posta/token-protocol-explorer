@@ -1,0 +1,257 @@
+{
+  "id": "oauth2-device-authorization",
+  "title": "OAuth 2.0 \u2014 Device Authorization Grant",
+  "description": "The Device Authorization Grant (RFC 8628) solves authorization for input-constrained devices like CLIs, smart TVs, media boxes, and IoT sensors that cannot open a browser or receive redirects. The device obtains a user code and verification URI from the AS, displays them to the user, and polls for a token while the user authorizes on a separate device (phone or laptop).",
+  "rfc": "RFC 8628",
+  "specUrl": "https://datatracker.ietf.org/doc/html/rfc8628",
+  "category": "OAuth 2.0",
+  "participants": [
+    { "id": "device", "label": "CLI / Smart TV", "type": "client" },
+    { "id": "as", "label": "Authorization Server", "type": "idp" },
+    { "id": "browser", "label": "User's Phone / Browser", "type": "user" },
+    { "id": "rs", "label": "Resource Server", "type": "server" }
+  ],
+  "steps": [
+    {
+      "step": 1,
+      "from": "device",
+      "to": "as",
+      "label": "POST /device_authorization",
+      "method": "POST",
+      "url": "https://auth.example.com/device_authorization",
+      "request_headers": {
+        "Content-Type": "application/x-www-form-urlencoded"
+      },
+      "request_body": "client_id=s6BhdRkqt3&scope=read:profile+media:stream+playlists:write",
+      "response_status": 200,
+      "response_headers": {
+        "Content-Type": "application/json",
+        "Cache-Control": "no-store"
+      },
+      "response_body": {
+        "device_code": "GmRhmhcxhwAzkoEqiMEg_DnyEysNkuNhszIySk9eS",
+        "user_code": "WDJB-MJHT",
+        "verification_uri": "https://auth.example.com/activate",
+        "verification_uri_complete": "https://auth.example.com/activate?user_code=WDJB-MJHT",
+        "expires_in": 1800,
+        "interval": 5
+      },
+      "artifacts": [
+        {
+          "type": "custom",
+          "raw_input": "client_id=s6BhdRkqt3&scope=read:profile+media:stream+playlists:write",
+          "signing_key_hint": "No user interaction at this step \u2014 device initiates the flow",
+          "final_output": "device_code (secret), user_code (short, human-typeable), verification_uri",
+          "steps": [
+            {
+              "label": "1. device_code \u2014 the device's session identifier",
+              "value": "device_code = \"GmRhmhcxhwAzkoEqiMEg_DnyEysNkuNhszIySk9eS\"\n\nThis is a high-entropy opaque value. The device sends it\non every polling request to identify which authorization session\nit is waiting for. It MUST be kept confidential \u2014 never shown\nto the user. Expires in 1800 seconds (30 minutes)."
+            },
+            {
+              "label": "2. user_code \u2014 short human-typeable code",
+              "value": "user_code = \"WDJB-MJHT\"\n\nRFC 8628 \u00a76.1: The user_code SHOULD have high entropy but MUST\nbe short enough to type on a constrained device (TV remote,\ngame controller). The AS SHOULD display it in a way that is\neasy to distinguish (hyphens, uppercase, no ambiguous chars\nlike 0/O or 1/l/I).\n\nThis code is what the user types on their phone/laptop. It\ncorresponds to the device_code on the AS side."
+            },
+            {
+              "label": "3. verification_uri \u2014 where the user goes",
+              "value": "verification_uri          = \"https://auth.example.com/activate\"\nverification_uri_complete = \"https://auth.example.com/activate?user_code=WDJB-MJHT\"\n\nThe device SHOULD display both:\n  \u2022 The short URI + user_code (for typing on TV)\n  \u2022 A QR code encoding verification_uri_complete (for scanning)\n\nverification_uri_complete pre-fills the user_code so the\nuser can skip the manual entry step."
+            },
+            {
+              "label": "4. Polling parameters",
+              "value": "expires_in = 1800  (seconds until device_code expires)\ninterval   = 5     (minimum seconds between polling attempts)\n\nThe device MUST NOT poll more frequently than once per\ninterval seconds. If it polls too fast the AS returns\nerror=slow_down and the device must increase its interval\nby 5 seconds."
+            }
+          ]
+        }
+      ],
+      "tokens": [],
+      "explanation": "The device requests a device code from the AS's device authorization endpoint. The AS returns a device_code (for polling), a user_code (for the user to type), and a verification_uri (where the user goes on their separate device). No user interaction has occurred yet.",
+      "annotations": [
+        "RFC 8628 \u00a73.1: The device authorization endpoint is a separate endpoint from the token endpoint.",
+        "RFC 8628 \u00a76.1: user_code entropy should resist brute-force for the duration of the code's lifetime (typically 15\u201330 minutes).",
+        "Public clients (no client_secret) are supported \u2014 the client_id alone is sufficient to initiate the flow.",
+        "The device_code and user_code are bound together on the AS \u2014 when the user approves via the user_code, the AS marks the corresponding device_code as authorized."
+      ]
+    },
+    {
+      "step": 2,
+      "from": "device",
+      "to": "as",
+      "label": "POST /token (poll \u2014 pending)",
+      "method": "POST",
+      "url": "https://auth.example.com/token",
+      "request_headers": {
+        "Content-Type": "application/x-www-form-urlencoded"
+      },
+      "request_body": "grant_type=urn%3Aietf%3Aparams%3Aoauth%3Agrant-type%3Adevice_code&device_code=GmRhmhcxhwAzkoEqiMEg_DnyEysNkuNhszIySk9eS&client_id=s6BhdRkqt3",
+      "response_status": 400,
+      "response_headers": {
+        "Content-Type": "application/json",
+        "Cache-Control": "no-store"
+      },
+      "response_body": {
+        "error": "authorization_pending",
+        "error_description": "The user has not yet completed authorization. Continue polling."
+      },
+      "artifacts": [
+        {
+          "type": "custom",
+          "raw_input": "grant_type=urn:ietf:params:oauth:grant-type:device_code",
+          "signing_key_hint": "Device polls at the interval specified in step 1",
+          "final_output": "error=authorization_pending \u2192 wait 5 seconds, retry",
+          "steps": [
+            {
+              "label": "Device polling loop",
+              "value": "The device repeatedly sends token requests using the device_code\nas the grant credential. Responses and their meanings:\n\n  authorization_pending  \u2192 user hasn't approved yet, keep polling\n  slow_down              \u2192 polling too fast; add 5s to interval\n  access_denied          \u2192 user denied; stop polling, show error\n  expired_token          \u2192 device_code expired; restart from step 1\n  200 OK                 \u2192 authorized! tokens in response body\n\nThe device waits at least `interval` seconds between attempts\n(5 seconds in this flow). A 400 with authorization_pending is\nexpected and normal \u2014 it is NOT an error in the failure sense."
+            }
+          ]
+        }
+      ],
+      "tokens": [],
+      "explanation": "The device starts polling the token endpoint using the device_code as a grant credential. The AS returns authorization_pending because the user has not yet visited the verification URI. The device waits the specified interval before trying again.",
+      "annotations": [
+        "RFC 8628 \u00a73.4: The device MUST wait at least `interval` seconds between polling requests.",
+        "RFC 8628 \u00a73.5: error=authorization_pending is the normal response while waiting; the device SHOULD continue polling.",
+        "error=slow_down increases the required interval by 5 seconds; the device must respect the new interval on all subsequent requests.",
+        "grant_type URI: urn:ietf:params:oauth:grant-type:device_code (must be percent-encoded in form bodies)."
+      ]
+    },
+    {
+      "step": 3,
+      "from": "browser",
+      "to": "as",
+      "label": "GET /activate (user navigates + enters code)",
+      "method": "GET",
+      "url": "https://auth.example.com/activate?user_code=WDJB-MJHT",
+      "request_headers": {
+        "Accept": "text/html"
+      },
+      "request_body": null,
+      "response_status": 200,
+      "response_headers": {
+        "Content-Type": "text/html; charset=utf-8"
+      },
+      "response_body": null,
+      "artifacts": [],
+      "tokens": [],
+      "explanation": "On their phone or laptop, the user navigates to the verification_uri shown by the device and enters (or scans via QR) the user_code. This is out-of-band from the device's perspective \u2014 the device does not initiate or observe this request.",
+      "annotations": [
+        "The user_code WDJB-MJHT was displayed by the device (TV screen, CLI output, etc.) in step 1.",
+        "verification_uri_complete pre-fills the user_code so a QR scan skips manual entry entirely.",
+        "The AS associates the submitted user_code with the pending device_code on the server side. The device never receives or sees this request.",
+        "RFC 8628 \u00a73.3: The AS should display the scopes being requested and identify the device/client before asking for consent. Scopes are application-defined permission strings \u2014 in this example, `read:profile` grants profile read access, `media:stream` permits streaming content, and `playlists:write` allows the device to create and modify playlists on the user's behalf. The user approves or denies the full set."
+      ]
+    },
+    {
+      "step": 4,
+      "from": "browser",
+      "to": "as",
+      "label": "POST /activate (authenticate + approve)",
+      "method": "POST",
+      "url": "https://auth.example.com/activate",
+      "request_headers": {
+        "Content-Type": "application/x-www-form-urlencoded",
+        "Cookie": "as_session=def789"
+      },
+      "request_body": "user_code=WDJB-MJHT&username=alice%40example.com&password=hunter2&consent=granted",
+      "response_status": 200,
+      "response_headers": {
+        "Content-Type": "text/html; charset=utf-8"
+      },
+      "response_body": null,
+      "artifacts": [],
+      "tokens": [],
+      "explanation": "The user authenticates and grants consent. The AS marks the device_code corresponding to WDJB-MJHT as authorized for user alice. The next time the device polls, the AS will issue tokens.",
+      "annotations": [
+        "The AS links the approved user_code \u2192 device_code \u2192 access token grant for user alice.",
+        "If the user denies consent, the AS marks the device_code as denied; the next device poll returns error=access_denied.",
+        "The device has no visibility into steps 3\u20134 \u2014 it learns the outcome only when its next token poll returns a 200 or error=access_denied.",
+        "The AS may show a confirmation screen indicating which device/application was authorized (e.g., 'You have authorized My CLI App')."
+      ]
+    },
+    {
+      "step": 5,
+      "from": "device",
+      "to": "as",
+      "label": "POST /token (poll \u2014 success)",
+      "method": "POST",
+      "url": "https://auth.example.com/token",
+      "request_headers": {
+        "Content-Type": "application/x-www-form-urlencoded"
+      },
+      "request_body": "grant_type=urn%3Aietf%3Aparams%3Aoauth%3Agrant-type%3Adevice_code&device_code=GmRhmhcxhwAzkoEqiMEg_DnyEysNkuNhszIySk9eS&client_id=s6BhdRkqt3",
+      "response_status": 200,
+      "response_headers": {
+        "Content-Type": "application/json",
+        "Cache-Control": "no-store"
+      },
+      "response_body": {
+        "access_token": "eyJ0eXAiOiJhdCtqd3QiLCJhbGciOiJFUzI1NiIsImtpZCI6ImF1dGgta2V5LTEifQ.eyJpc3MiOiJodHRwczovL2F1dGguZXhhbXBsZS5jb20iLCJzdWIiOiJ1c2VyX2FsaWNlXzQ4MiIsImF1ZCI6Imh0dHBzOi8vYXBpLmV4YW1wbGUuY29tIiwiZXhwIjoxNzAwMDAzNjAwLCJpYXQiOjE3MDAwMDAwMDAsImp0aSI6ImQ3ZThiOWMwZDFlMiIsImNsaWVudF9pZCI6InM2QmhkUmtxdDMiLCJzY29wZSI6InByb2ZpbGUgZW1haWwifQ.mock_sig",
+        "token_type": "Bearer",
+        "expires_in": 3600,
+        "refresh_token": "8xLOxBtZp8",
+        "scope": "read:profile media:stream playlists:write"
+      },
+      "artifacts": [],
+      "tokens": [
+        {
+          "name": "Access Token",
+          "typ": "at+jwt",
+          "raw": "eyJ0eXAiOiJhdCtqd3QiLCJhbGciOiJFUzI1NiIsImtpZCI6ImF1dGgta2V5LTEifQ.eyJpc3MiOiJodHRwczovL2F1dGguZXhhbXBsZS5jb20iLCJzdWIiOiJ1c2VyX2FsaWNlXzQ4MiIsImF1ZCI6Imh0dHBzOi8vYXBpLmV4YW1wbGUuY29tIiwiZXhwIjoxNzAwMDAzNjAwLCJpYXQiOjE3MDAwMDAwMDAsImp0aSI6ImQ3ZThiOWMwZDFlMiIsImNsaWVudF9pZCI6InM2QmhkUmtxdDMiLCJzY29wZSI6InByb2ZpbGUgZW1haWwifQ.mock_sig",
+          "header": {
+            "typ": "at+jwt",
+            "alg": "ES256",
+            "kid": "auth-key-1"
+          },
+          "payload": {
+            "iss": "https://auth.example.com",
+            "sub": "user_alice_482",
+            "aud": "https://api.example.com",
+            "exp": 1700003600,
+            "iat": 1700000000,
+            "jti": "d7e8b9c0d1e2",
+            "client_id": "s6BhdRkqt3",
+            "scope": "read:profile media:stream playlists:write"
+          },
+          "signature_b64": "mock_sig"
+        }
+      ],
+      "explanation": "After the user approves on their secondary device, the next device poll returns a 200 with an access token and refresh token. The device's polling loop is complete. The token carries the identity of the user who approved (sub), not the device.",
+      "annotations": [
+        "The access token sub=user_alice_482 identifies the user who authorized on the secondary device, enabling the CLI/device to act on their behalf.",
+        "RFC 8628 \u00a73.5: Once tokens are issued, the device_code is consumed and must not be reused.",
+        "The device should securely store the refresh_token to obtain new access tokens without requiring the user to re-authorize.",
+        "Devices operating on behalf of users should implement token refresh to avoid requiring the user to re-authorize each time the access token expires (every expires_in seconds \u2014 1 hour in this example)."
+      ]
+    },
+    {
+      "step": 6,
+      "from": "device",
+      "to": "rs",
+      "label": "GET /api/profile",
+      "method": "GET",
+      "url": "https://api.example.com/profile",
+      "request_headers": {
+        "Authorization": "Bearer eyJ0eXAiOiJhdCtqd3QiLCJhbGciOiJFUzI1NiIsImtpZCI6ImF1dGgta2V5LTEifQ.eyJpc3MiOiJodHRwczovL2F1dGguZXhhbXBsZS5jb20iLCJzdWIiOiJ1c2VyX2FsaWNlXzQ4MiIsImF1ZCI6Imh0dHBzOi8vYXBpLmV4YW1wbGUuY29tIiwiZXhwIjoxNzAwMDAzNjAwLCJpYXQiOjE3MDAwMDAwMDAsImp0aSI6ImQ3ZThiOWMwZDFlMiIsImNsaWVudF9pZCI6InM2QmhkUmtxdDMiLCJzY29wZSI6InByb2ZpbGUgZW1haWwifQ.mock_sig",
+        "Accept": "application/json"
+      },
+      "request_body": null,
+      "response_status": 200,
+      "response_headers": {
+        "Content-Type": "application/json"
+      },
+      "response_body": {
+        "user_id": "user_alice_482",
+        "name": "Alice Example",
+        "email": "alice@example.com",
+        "plan": "pro"
+      },
+      "artifacts": [],
+      "tokens": [],
+      "explanation": "The device uses the access token to call the protected API on behalf of the user who authorized on the secondary device. From the RS's perspective, this is an ordinary Bearer token request \u2014 the unusual acquisition path is invisible.",
+      "annotations": [
+        "The device flow is transparent to the resource server \u2014 the access token is indistinguishable from one obtained via authorization code flow.",
+        "The sub claim identifies Alice, not the device. The device is the client acting on Alice's behalf.",
+        "For long-lived device sessions (e.g., a TV app), the device should use the refresh token to renew the access token silently without requiring Alice to re-authorize."
+      ]
+    }
+  ]
+}

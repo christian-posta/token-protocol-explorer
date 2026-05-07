@@ -1,0 +1,277 @@
+{
+  "id": "oauth2-authorization-code",
+  "title": "OAuth 2.0 \u2014 Authorization Code + PKCE",
+  "description": "The foundational OAuth 2.0 grant type for delegated user authorization. A client redirects the user to an Authorization Server, which authenticates the user and issues a short-lived authorization code. The client exchanges the code for tokens. PKCE (Proof Key for Code Exchange, RFC 7636) is layered on top to prevent authorization code interception attacks \u2014 mandatory for public clients and best practice for all.",
+  "rfc": "RFC 6749 + RFC 7636",
+  "specUrl": "https://datatracker.ietf.org/doc/html/rfc6749",
+  "category": "OAuth 2.0",
+  "participants": [
+    { "id": "browser", "label": "Browser / User", "type": "user" },
+    { "id": "client", "label": "Web App", "type": "client" },
+    { "id": "as", "label": "Authorization Server", "type": "idp" },
+    { "id": "rs", "label": "Resource Server", "type": "server" }
+  ],
+  "steps": [
+    {
+      "step": 1,
+      "from": "browser",
+      "to": "client",
+      "label": "GET / (Sign In clicked)",
+      "method": "GET",
+      "url": "https://myapp.example.com/login",
+      "request_headers": {
+        "Accept": "text/html"
+      },
+      "request_body": null,
+      "response_status": 302,
+      "response_headers": {
+        "Location": "https://auth.example.com/authorize?response_type=code&client_id=s6BhdRkqt3&redirect_uri=https%3A%2F%2Fmyapp.example.com%2Fcallback&scope=read:profile+write:reports&state=xyzABC123&code_challenge=E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM&code_challenge_method=S256",
+        "Set-Cookie": "state=xyzABC123; HttpOnly; Secure; SameSite=Lax"
+      },
+      "response_body": null,
+      "artifacts": [
+        {
+          "type": "custom",
+          "raw_input": "code_verifier = dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk",
+          "signing_key_hint": "Client-generated cryptographically random value (43\u2013128 URL-safe chars)",
+          "final_output": "code_challenge = E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM",
+          "steps": [
+            {
+              "label": "1. Generate code_verifier (RFC 7636 \u00a74.1)",
+              "value": "code_verifier = high-entropy random string\n= \"dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk\"\n\nMust be 43\u2013128 characters from the unreserved alphabet:\n  [A-Z] / [a-z] / [0-9] / \"-\" / \".\" / \"_\" / \"~\"\n\nGenerate using a cryptographically secure RNG (e.g., SecureRandom,\ncrypto.getRandomValues). The value is stored server-side\nor in a secure session \u2014 NEVER sent until the token request."
+            },
+            {
+              "label": "2. Derive code_challenge via S256 (RFC 7636 \u00a74.2)",
+              "value": "code_challenge = BASE64URL(SHA-256(ASCII(code_verifier)))\n\n  input  : \"dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk\"\n  SHA-256: 0xC481...  (32 bytes)\n  BASE64URL(\u2026): \"E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM\"\n\nThe challenge is safe to embed in the authorization URL because\nSHA-256 is not reversible \u2014 an observer cannot recover the\ncode_verifier from the challenge."
+            },
+            {
+              "label": "3. Store state + code_verifier; send challenge in redirect",
+              "value": "Client stores server-side (encrypted cookie or session):\n  state          : \"xyzABC123\"  \u2192 returned verbatim by AS (CSRF guard)\n  code_verifier  : \"dBjftJeZ4CVP...\" \u2192 revealed only at token endpoint\n\nThe authorization URL carries:\n  code_challenge        = E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM\n  code_challenge_method = S256\n\nThe AS records the challenge and will verify it when the\nauthorization code is exchanged."
+            }
+          ]
+        }
+      ],
+      "tokens": [],
+      "explanation": "The user clicks 'Sign In'. Before redirecting, the client generates a PKCE code_verifier (random secret) and derives a code_challenge via SHA-256. It redirects the browser to the AS /authorize endpoint embedding the challenge and a CSRF-guard state value.",
+      "annotations": [
+        "RFC 7636 \u00a74.1: code_verifier must be 43\u2013128 URL-safe chars from a cryptographically secure source.",
+        "RFC 7636 \u00a74.2: S256 is the required method (plain is only allowed if S256 is not feasible). code_challenge = BASE64URL(SHA-256(ASCII(code_verifier))).",
+        "RFC 6749 \u00a710.12: The state parameter prevents CSRF \u2014 the client must generate it randomly and verify the AS echoes it back unchanged.",
+        "response_type=code requests an authorization code; the client will exchange the code for tokens in a back-channel request (step 5), keeping tokens out of the browser."
+      ]
+    },
+    {
+      "step": 2,
+      "from": "browser",
+      "to": "as",
+      "label": "GET /authorize (redirect)",
+      "method": "GET",
+      "url": "https://auth.example.com/authorize?response_type=code&client_id=s6BhdRkqt3&redirect_uri=https%3A%2F%2Fmyapp.example.com%2Fcallback&scope=read:profile+write:reports&state=xyzABC123&code_challenge=E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM&code_challenge_method=S256",
+      "request_headers": {
+        "Accept": "text/html"
+      },
+      "request_body": null,
+      "response_status": 200,
+      "response_headers": {
+        "Content-Type": "text/html; charset=utf-8",
+        "Cache-Control": "no-store"
+      },
+      "response_body": null,
+      "artifacts": [],
+      "tokens": [],
+      "explanation": "The browser follows the redirect to the AS authorization endpoint. The AS validates the client registration, stores the code_challenge, and serves a login/consent UI to the user.",
+      "annotations": [
+        "RFC 6749 \u00a73.1.2.3: The AS validates that redirect_uri exactly matches a pre-registered URI for the client. Mismatches are rejected without redirecting \u2014 the AS shows an error to the user but MUST NOT redirect to the invalid URI (prevents open-redirector abuse).",
+        "The AS records (client_id, redirect_uri, scope, state, code_challenge, code_challenge_method) associated with this authorization session.",
+        "RFC 6749 \u00a73.3: scope is a space-separated list of application-defined permission strings \u2014 OAuth does not define their meaning. `read:profile` and `write:reports` are examples that describe exactly what access the client is requesting on the user's behalf. The user reviews and approves these on the consent screen. The AS may downscope based on client registration or user consent; the granted scope is returned in the token response."
+      ]
+    },
+    {
+      "step": 3,
+      "from": "browser",
+      "to": "as",
+      "label": "POST /login (credentials + consent)",
+      "method": "POST",
+      "url": "https://auth.example.com/login",
+      "request_headers": {
+        "Content-Type": "application/x-www-form-urlencoded",
+        "Cookie": "as_session=abc123"
+      },
+      "request_body": "username=alice%40example.com&password=hunter2&consent=granted&csrf_token=qrs456",
+      "response_status": 302,
+      "response_headers": {
+        "Location": "https://myapp.example.com/callback?code=SplxlOBeZQQYbYS6WxSbIA&state=xyzABC123",
+        "Cache-Control": "no-store"
+      },
+      "response_body": null,
+      "artifacts": [],
+      "tokens": [],
+      "explanation": "The user submits credentials and grants consent. The AS authenticates the user, generates a short-lived single-use authorization code, and redirects the browser back to the client's redirect_uri with the code and original state.",
+      "annotations": [
+        "The authorization code is bound to: client_id, redirect_uri, code_challenge, authenticated user (sub), and granted scope. All must match at the token endpoint.",
+        "RFC 6749 \u00a74.1.2: The code SHOULD expire within 10 minutes and MUST be single-use \u2014 the AS invalidates it immediately upon use.",
+        "The code travels through the browser URL (visible in browser history, server logs, and Referrer headers). PKCE ensures that capturing the code alone is insufficient to obtain tokens without the code_verifier.",
+        "state is returned verbatim; the client must verify it in step 4 before trusting the code."
+      ]
+    },
+    {
+      "step": 4,
+      "from": "browser",
+      "to": "client",
+      "label": "GET /callback?code=...&state=...",
+      "method": "GET",
+      "url": "https://myapp.example.com/callback?code=SplxlOBeZQQYbYS6WxSbIA&state=xyzABC123",
+      "request_headers": {
+        "Cookie": "state=xyzABC123"
+      },
+      "request_body": null,
+      "response_status": 200,
+      "response_headers": {
+        "Content-Type": "text/html"
+      },
+      "response_body": null,
+      "artifacts": [],
+      "tokens": [],
+      "explanation": "The browser follows the AS redirect back to the client callback endpoint. The client validates the returned state matches the stored value (CSRF check), then proceeds to exchange the authorization code for tokens in a direct back-channel request.",
+      "annotations": [
+        "State validation is the first action \u2014 abort immediately if returned state \u2260 stored state.",
+        "The authorization code (SplxlOBeZQQYbYS6WxSbIA) is useless without the code_verifier, which never left the client server.",
+        "The client now has: code, stored code_verifier, client_id, redirect_uri \u2014 everything needed for the token exchange (step 5).",
+        "No token has been issued yet \u2014 this step is purely a delivery mechanism for the authorization code."
+      ]
+    },
+    {
+      "step": 5,
+      "from": "client",
+      "to": "as",
+      "label": "POST /token (code exchange)",
+      "method": "POST",
+      "url": "https://auth.example.com/token",
+      "request_headers": {
+        "Content-Type": "application/x-www-form-urlencoded",
+        "Authorization": "Basic czZCaGRSa3F0MzpnWDFmQmF0M2JW"
+      },
+      "request_body": "grant_type=authorization_code&code=SplxlOBeZQQYbYS6WxSbIA&redirect_uri=https%3A%2F%2Fmyapp.example.com%2Fcallback&code_verifier=dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk",
+      "response_status": 200,
+      "response_headers": {
+        "Content-Type": "application/json",
+        "Cache-Control": "no-store",
+        "Pragma": "no-cache"
+      },
+      "response_body": {
+        "access_token": "eyJ0eXAiOiJhdCtqd3QiLCJhbGciOiJFUzI1NiIsImtpZCI6ImF1dGgta2V5LTEifQ.eyJpc3MiOiJodHRwczovL2F1dGguZXhhbXBsZS5jb20iLCJzdWIiOiJ1c2VyX2FsaWNlXzQ4MiIsImF1ZCI6Imh0dHBzOi8vYXBpLmV4YW1wbGUuY29tIiwiZXhwIjoxNzAwMDAzNjAwLCJpYXQiOjE3MDAwMDAwMDAsImp0aSI6ImExYjJjM2Q0ZTVmNiIsImNsaWVudF9pZCI6InM2QmhkUmtxdDMiLCJzY29wZSI6InByb2ZpbGUgZW1haWwifQ.mock_sig",
+        "token_type": "Bearer",
+        "expires_in": 3600,
+        "refresh_token": "tGzv3JOkF0XG5Qx2TlKWIA",
+        "scope": "read:profile write:reports"
+      },
+      "artifacts": [
+        {
+          "type": "custom",
+          "raw_input": "code_verifier = dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk",
+          "signing_key_hint": "AS re-derives the challenge and compares to the stored value",
+          "final_output": "BASE64URL(SHA-256(code_verifier)) == stored code_challenge \u2713 \u2192 tokens issued",
+          "steps": [
+            {
+              "label": "1. AS receives code_verifier for the first time",
+              "value": "code_verifier = \"dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk\"\n\nThis is the first time this value has appeared on the wire.\nIt was stored only on the client server since step 1."
+            },
+            {
+              "label": "2. AS re-derives the challenge",
+              "value": "computed_challenge = BASE64URL(SHA-256(ASCII(code_verifier)))\n= BASE64URL(SHA-256(\"dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk\"))\n= \"E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM\""
+            },
+            {
+              "label": "3. Compare against stored challenge",
+              "value": "stored_challenge   = \"E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM\"  (from step 2)\ncomputed_challenge = \"E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM\"  \u2713 MATCH\n\nResult: code is legitimate \u2192 issue tokens.\n\nIf an attacker intercepted the authorization code from the\nbrowser redirect but did not have the code_verifier, they\ncould not produce a matching challenge \u2014 their token\nrequest would be rejected with error=invalid_grant."
+            }
+          ]
+        }
+      ],
+      "tokens": [
+        {
+          "name": "Access Token",
+          "typ": "at+jwt",
+          "raw": "eyJ0eXAiOiJhdCtqd3QiLCJhbGciOiJFUzI1NiIsImtpZCI6ImF1dGgta2V5LTEifQ.eyJpc3MiOiJodHRwczovL2F1dGguZXhhbXBsZS5jb20iLCJzdWIiOiJ1c2VyX2FsaWNlXzQ4MiIsImF1ZCI6Imh0dHBzOi8vYXBpLmV4YW1wbGUuY29tIiwiZXhwIjoxNzAwMDAzNjAwLCJpYXQiOjE3MDAwMDAwMDAsImp0aSI6ImExYjJjM2Q0ZTVmNiIsImNsaWVudF9pZCI6InM2QmhkUmtxdDMiLCJzY29wZSI6InByb2ZpbGUgZW1haWwifQ.mock_sig",
+          "header": {
+            "typ": "at+jwt",
+            "alg": "ES256",
+            "kid": "auth-key-1"
+          },
+          "payload": {
+            "iss": "https://auth.example.com",
+            "sub": "user_alice_482",
+            "aud": "https://api.example.com",
+            "exp": 1700003600,
+            "iat": 1700000000,
+            "jti": "a1b2c3d4e5f6",
+            "client_id": "s6BhdRkqt3",
+            "scope": "read:profile write:reports"
+          },
+          "signature_b64": "mock_sig"
+        }
+      ],
+      "explanation": "The client exchanges the authorization code for tokens in a direct back-channel request. It reveals the code_verifier for the first time. The AS re-computes the SHA-256 hash and verifies it matches the stored code_challenge. On success, it issues an access token and refresh token.",
+      "annotations": [
+        "RFC 7636 \u00a74.6: PKCE verification: BASE64URL(SHA-256(code_verifier)) MUST equal the stored code_challenge. Mismatch \u2192 error=invalid_grant.",
+        "The Authorization header uses HTTP Basic auth (client_secret_basic) \u2014 Base64(client_id \":\" client_secret). This authenticates the confidential client itself, separate from the user.",
+        "redirect_uri in the token request must exactly match the value from the authorization request (RFC 6749 \u00a74.1.3). This prevents substitution attacks.",
+        "Cache-Control: no-store and Pragma: no-cache are required (RFC 6749 \u00a75.1) to prevent token response caching by proxies or browsers.",
+        "refresh_token (tGzv3JOkF0XG5Qx2TlKWIA) enables silent token renewal without user interaction. It is long-lived and must be stored securely."
+      ]
+    },
+    {
+      "step": 6,
+      "from": "client",
+      "to": "rs",
+      "label": "GET /api/profile",
+      "method": "GET",
+      "url": "https://api.example.com/profile",
+      "request_headers": {
+        "Authorization": "Bearer eyJ0eXAiOiJhdCtqd3QiLCJhbGciOiJFUzI1NiIsImtpZCI6ImF1dGgta2V5LTEifQ.eyJpc3MiOiJodHRwczovL2F1dGguZXhhbXBsZS5jb20iLCJzdWIiOiJ1c2VyX2FsaWNlXzQ4MiIsImF1ZCI6Imh0dHBzOi8vYXBpLmV4YW1wbGUuY29tIiwiZXhwIjoxNzAwMDAzNjAwLCJpYXQiOjE3MDAwMDAwMDAsImp0aSI6ImExYjJjM2Q0ZTVmNiIsImNsaWVudF9pZCI6InM2QmhkUmtxdDMiLCJzY29wZSI6InByb2ZpbGUgZW1haWwifQ.mock_sig",
+        "Accept": "application/json"
+      },
+      "request_body": null,
+      "response_status": 200,
+      "response_headers": {
+        "Content-Type": "application/json"
+      },
+      "response_body": {
+        "user_id": "user_alice_482",
+        "name": "Alice Example",
+        "email": "alice@example.com",
+        "plan": "pro"
+      },
+      "artifacts": [],
+      "tokens": [
+        {
+          "name": "Access Token",
+          "typ": "at+jwt",
+          "raw": "eyJ0eXAiOiJhdCtqd3QiLCJhbGciOiJFUzI1NiIsImtpZCI6ImF1dGgta2V5LTEifQ.eyJpc3MiOiJodHRwczovL2F1dGguZXhhbXBsZS5jb20iLCJzdWIiOiJ1c2VyX2FsaWNlXzQ4MiIsImF1ZCI6Imh0dHBzOi8vYXBpLmV4YW1wbGUuY29tIiwiZXhwIjoxNzAwMDAzNjAwLCJpYXQiOjE3MDAwMDAwMDAsImp0aSI6ImExYjJjM2Q0ZTVmNiIsImNsaWVudF9pZCI6InM2QmhkUmtxdDMiLCJzY29wZSI6InByb2ZpbGUgZW1haWwifQ.mock_sig",
+          "header": {
+            "typ": "at+jwt",
+            "alg": "ES256",
+            "kid": "auth-key-1"
+          },
+          "payload": {
+            "iss": "https://auth.example.com",
+            "sub": "user_alice_482",
+            "aud": "https://api.example.com",
+            "exp": 1700003600,
+            "iat": 1700000000,
+            "jti": "a1b2c3d4e5f6",
+            "client_id": "s6BhdRkqt3",
+            "scope": "read:profile write:reports"
+          },
+          "signature_b64": "mock_sig"
+        }
+      ],
+      "explanation": "The client uses the access token as a Bearer credential to call the protected API. The RS validates the token's signature, issuer, audience, and expiry before returning the user's profile data.",
+      "annotations": [
+        "RS validation steps: (1) fetch AS public key from JWKS endpoint using kid, (2) verify JWT signature, (3) confirm iss matches expected AS, (4) confirm aud matches this RS, (5) confirm exp > now.",
+        "Bearer tokens (RFC 6750) provide no sender constraint \u2014 any party with the token can use it. Consider DPoP (RFC 9449) to bind the token to a specific client key.",
+        "The sub claim (user_alice_482) identifies the user \u2014 the RS uses this to look up user-specific resources.",
+        "scope=read:profile write:reports was granted; the RS should verify the specific operation requested (e.g., reading the profile) falls within the granted scopes before responding. A request to write a report would require write:reports; reading the profile requires read:profile."
+      ]
+    }
+  ]
+}

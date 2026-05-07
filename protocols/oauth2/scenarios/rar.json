@@ -1,0 +1,293 @@
+{
+  "id": "oauth2-rar",
+  "title": "OAuth 2.0 \u2014 Rich Authorization Requests (RAR)",
+  "description": "Rich Authorization Requests (RFC 9396) replace coarse-grained scopes with a structured authorization_details parameter that precisely describes what the client is authorized to do. Instead of scope=payments (which could mean 'make any payment'), the client specifies the exact payment type, amount, currency, and recipient. The AS embeds the granted authorization_details in the access token, and the resource server enforces the specific constraints \u2014 not just 'can make payments' but 'can make exactly this payment'.",
+  "rfc": "RFC 9396",
+  "specUrl": "https://datatracker.ietf.org/doc/html/rfc9396",
+  "category": "OAuth 2.0",
+  "participants": [
+    { "id": "browser", "label": "Browser / User", "type": "user" },
+    { "id": "client", "label": "Banking App (RP)", "type": "client" },
+    { "id": "as", "label": "Authorization Server", "type": "idp" },
+    { "id": "rs", "label": "Payments API", "type": "server" }
+  ],
+  "steps": [
+    {
+      "step": 1,
+      "from": "browser",
+      "to": "client",
+      "label": "Initiate payment of \u20ac250",
+      "method": "POST",
+      "url": "https://bankapp.example.com/payments/initiate",
+      "request_headers": {
+        "Content-Type": "application/json",
+        "Cookie": "session=user_session_abc"
+      },
+      "request_body": {
+        "amount": "250.00",
+        "currency": "EUR",
+        "recipient": "John Smith",
+        "iban": "DE02100100109307118603",
+        "reference": "Invoice #2024-0042"
+      },
+      "response_status": 302,
+      "response_headers": {
+        "Location": "https://auth.example.com/authorize?response_type=code&client_id=bankapp-client&redirect_uri=https%3A%2F%2Fbankapp.example.com%2Fcallback&state=xyz789&code_challenge=E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM&code_challenge_method=S256&authorization_details=%5B%7B%22type%22%3A%22payment_initiation%22%2C%22actions%22%3A%5B%22initiate%22%5D%2C%22locations%22%3A%5B%22https%3A%2F%2Fpayments.example.com%22%5D%2C%22instructedAmount%22%3A%7B%22currency%22%3A%22EUR%22%2C%22amount%22%3A%22250.00%22%7D%2C%22creditorName%22%3A%22John%20Smith%22%2C%22creditorAccount%22%3A%7B%22iban%22%3A%22DE02100100109307118603%22%7D%7D%5D"
+      },
+      "response_body": null,
+      "artifacts": [
+        {
+          "type": "custom",
+          "raw_input": "{ amount: 250.00 EUR, recipient: John Smith, iban: DE02100100109307118603 }",
+          "signing_key_hint": "Client builds authorization_details JSON from the payment intent",
+          "final_output": "authorization_details=[{\"type\":\"payment_initiation\", ...}] encoded in the authorization URL",
+          "steps": [
+            {
+              "label": "1. Why scopes are not enough",
+              "value": "Traditional scope-based authorization for payments:\n\n  scope = \"payments:write\"\n\nThis tells the AS: \"the client wants to make payments.\"\nIt tells the RS nothing useful:\n  \u2022 How much? (could be any amount)\n  \u2022 To whom? (could be any recipient)\n  \u2022 Which account? (not specified)\n  \u2022 One payment or unlimited? (not specified)\n\nThe RS must trust the client to stay within bounds \u2014 or\nimplement its own out-of-band authorization system.\nScope is a permission category, not a permission contract."
+            },
+            {
+              "label": "2. authorization_details \u2014 the structured alternative",
+              "value": "authorization_details = [\n  {\n    \"type\": \"payment_initiation\",\n    \"actions\": [\"initiate\"],\n    \"locations\": [\"https://payments.example.com\"],\n    \"instructedAmount\": {\n      \"currency\": \"EUR\",\n      \"amount\": \"250.00\"\n    },\n    \"creditorName\": \"John Smith\",\n    \"creditorAccount\": {\n      \"iban\": \"DE02100100109307118603\"\n    },\n    \"remittanceInformation\": \"Invoice #2024-0042\"\n  }\n]\n\nThis authorization is NOT for 'make payments'.\nIt is ONLY for: initiate exactly one \u20ac250 payment\nto DE02100100109307118603 (John Smith).\n\nRFC 9396 \u00a72: authorization_details is a JSON array.\nEach element MUST have a type field; other fields are\ntype-specific and defined by the authorization type's\nown specification (e.g., Open Banking, FHIR, etc.)."
+            },
+            {
+              "label": "3. Type registry and extensibility",
+              "value": "The \"type\" field is the key to RAR extensibility:\n\n  \"payment_initiation\"  \u2192 Open Banking / PSD2 payments\n  \"openid_credential\"   \u2192 OpenID for Verifiable Credentials\n  \"account_information\" \u2192 Open Banking account read\n  \"medical_record\"      \u2192 FHIR-based health data access\n  \"document_access\"     \u2192 specific document + permissions\n\nEach type defines its own schema. The AS understands\nthe type to show an appropriate consent UI.\nThe RS understands the type to enforce the exact\noperation that was authorized.\n\nauthorization_details can coexist with scope in the same\nrequest \u2014 they are additive, not mutually exclusive."
+            }
+          ]
+        }
+      ],
+      "tokens": [],
+      "explanation": "The user initiates a \u20ac250 payment. The client builds a structured authorization_details JSON describing the exact payment operation and redirects the browser to the AS with it encoded in the authorization request. This is the key difference from scope-based authorization \u2014 the intent is fully specified upfront.",
+      "annotations": [
+        "RFC 9396 \u00a72: authorization_details is a JSON array encoded as a query parameter (URL-encoded JSON string).",
+        "For large authorization_details payloads, PAR (RFC 9126) should be used to push the request server-to-server rather than embedding it in the URL. PAR + RAR is the recommended combination for financial-grade APIs.",
+        "The authorization_details value is what the AS will show in the consent UI \u2014 specific enough for the user to make an informed decision.",
+        "RFC 9396 \u00a73: If authorization_details and scope are both present, both are applied. They are complementary, not mutually exclusive."
+      ]
+    },
+    {
+      "step": 2,
+      "from": "browser",
+      "to": "as",
+      "label": "GET /authorize (with authorization_details)",
+      "method": "GET",
+      "url": "https://auth.example.com/authorize?response_type=code&client_id=bankapp-client&redirect_uri=https%3A%2F%2Fbankapp.example.com%2Fcallback&state=xyz789&code_challenge=E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM&code_challenge_method=S256&authorization_details=%5B%7B%22type%22%3A%22payment_initiation%22...%7D%5D",
+      "request_headers": {
+        "Accept": "text/html"
+      },
+      "request_body": null,
+      "response_status": 200,
+      "response_headers": {
+        "Content-Type": "text/html; charset=utf-8"
+      },
+      "response_body": null,
+      "artifacts": [],
+      "tokens": [],
+      "explanation": "The browser follows the redirect to the AS authorization endpoint. The AS parses the authorization_details, validates the payment_initiation type and its fields, and prepares a consent screen that shows the user exactly what they are authorizing \u2014 not just 'payments access' but the specific \u20ac250 payment.",
+      "annotations": [
+        "RFC 9396 \u00a75.1: The AS MUST validate the authorization_details parameter. Unknown types MUST be rejected with error=invalid_authorization_details.",
+        "The AS builds a consent UI that shows the user the specific authorization being requested \u2014 amount, recipient, account. This is far more informative than 'payments:write'.",
+        "RFC 9396 \u00a75: The AS MAY downscope or modify authorization_details based on policy; the granted details are returned in the token response and embedded in the access token."
+      ]
+    },
+    {
+      "step": 3,
+      "from": "browser",
+      "to": "as",
+      "label": "POST /login (authenticate + approve payment)",
+      "method": "POST",
+      "url": "https://auth.example.com/login",
+      "request_headers": {
+        "Content-Type": "application/x-www-form-urlencoded",
+        "Cookie": "as_session=abc123"
+      },
+      "request_body": "username=alice%40example.com&password=hunter2&consent=granted&csrf_token=qrs456",
+      "response_status": 302,
+      "response_headers": {
+        "Location": "https://bankapp.example.com/callback?code=PaymentCode789&state=xyz789"
+      },
+      "response_body": null,
+      "artifacts": [],
+      "tokens": [],
+      "explanation": "The user authenticates and approves the specific payment. The consent screen shows the exact amount (\u20ac250), recipient (John Smith), and IBAN \u2014 not a generic 'allow payments' prompt. The AS issues a code bound to these specific authorization_details.",
+      "annotations": [
+        "The AS consent screen shows the specific payment details from authorization_details. This is the user's explicit, informed consent for this exact transaction.",
+        "Strong customer authentication (SCA) as required by PSD2 would be triggered here for payment initiation \u2014 typically requiring a second factor.",
+        "The authorization code is bound to the authorization_details that were requested; the AS will embed them in the access token on exchange."
+      ]
+    },
+    {
+      "step": 4,
+      "from": "browser",
+      "to": "client",
+      "label": "GET /callback?code=...&state=...",
+      "method": "GET",
+      "url": "https://bankapp.example.com/callback?code=PaymentCode789&state=xyz789",
+      "request_headers": {
+        "Cookie": "state=xyz789"
+      },
+      "request_body": null,
+      "response_status": 200,
+      "response_headers": {
+        "Content-Type": "text/html"
+      },
+      "response_body": null,
+      "artifacts": [],
+      "tokens": [],
+      "explanation": "The browser returns to the client callback with the authorization code. The client validates state and proceeds to exchange the code for an access token containing the specific authorization_details.",
+      "annotations": [
+        "Standard state validation applies \u2014 verify the returned state matches the stored value before proceeding.",
+        "The code_verifier is retrieved from the server-side session for the PKCE verification in the token request."
+      ]
+    },
+    {
+      "step": 5,
+      "from": "client",
+      "to": "as",
+      "label": "POST /token (code exchange)",
+      "method": "POST",
+      "url": "https://auth.example.com/token",
+      "request_headers": {
+        "Content-Type": "application/x-www-form-urlencoded",
+        "Authorization": "Basic YmFua2FwcC1jbGllbnQ6c2VjcmV0"
+      },
+      "request_body": "grant_type=authorization_code&code=PaymentCode789&redirect_uri=https%3A%2F%2Fbankapp.example.com%2Fcallback&code_verifier=dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk",
+      "response_status": 200,
+      "response_headers": {
+        "Content-Type": "application/json",
+        "Cache-Control": "no-store"
+      },
+      "response_body": {
+        "access_token": "eyJ0eXAiOiJhdCtqd3QiLCJhbGciOiJFUzI1NiIsImtpZCI6ImF1dGgta2V5LTEifQ.eyJpc3MiOiJodHRwczovL2F1dGguZXhhbXBsZS5jb20iLCJzdWIiOiJ1c2VyX2FsaWNlXzQ4MiIsImF1ZCI6Imh0dHBzOi8vcGF5bWVudHMuZXhhbXBsZS5jb20iLCJleHAiOjE3MDAwMDM2MDAsImlhdCI6MTcwMDAwMDAwMCwianRpIjoicmFyMWEyYjNjNCIsImNsaWVudF9pZCI6ImJhbmthcHAtY2xpZW50IiwiYXV0aG9yaXphdGlvbl9kZXRhaWxzIjpbeyJ0eXBlIjoicGF5bWVudF9pbml0aWF0aW9uIiwiYWN0aW9ucyI6WyJpbml0aWF0ZSJdLCJsb2NhdGlvbnMiOlsiaHR0cHM6Ly9wYXltZW50cy5leGFtcGxlLmNvbSJdLCJpbnN0cnVjdGVkQW1vdW50Ijp7ImN1cnJlbmN5IjoiRVVSIiwiYW1vdW50IjoiMjUwLjAwIn0sImNyZWRpdG9yTmFtZSI6IkpvaG4gU21pdGgiLCJjcmVkaXRvckFjY291bnQiOnsiaWJhbiI6IkRFMDIxMDAxMDAxMDkzMDcxMTg2MDMifX1dfQ.mock_sig",
+        "token_type": "Bearer",
+        "expires_in": 300,
+        "authorization_details": [
+          {
+            "type": "payment_initiation",
+            "actions": ["initiate"],
+            "locations": ["https://payments.example.com"],
+            "instructedAmount": {
+              "currency": "EUR",
+              "amount": "250.00"
+            },
+            "creditorName": "John Smith",
+            "creditorAccount": {
+              "iban": "DE02100100109307118603"
+            },
+            "remittanceInformation": "Invoice #2024-0042"
+          }
+        ]
+      },
+      "artifacts": [
+        {
+          "type": "jwt",
+          "raw_input": "eyJ0eXAiOiJhdCtqd3QiLCJhbGciOiJFUzI1NiIsImtpZCI6ImF1dGgta2V5LTEifQ.eyJpc3MiOiJodHRwczovL2F1dGguZXhhbXBsZS5jb20iLCJzdWIiOiJ1c2VyX2FsaWNlXzQ4MiIsImF1ZCI6Imh0dHBzOi8vcGF5bWVudHMuZXhhbXBsZS5jb20iLCJleHAiOjE3MDAwMDM2MDAsImlhdCI6MTcwMDAwMDAwMCwianRpIjoicmFyMWEyYjNjNCIsImNsaWVudF9pZCI6ImJhbmthcHAtY2xpZW50IiwiYXV0aG9yaXphdGlvbl9kZXRhaWxzIjpbeyJ0eXBlIjoicGF5bWVudF9pbml0aWF0aW9uIiwiYWN0aW9ucyI6WyJpbml0aWF0ZSJdLCJsb2NhdGlvbnMiOlsiaHR0cHM6Ly9wYXltZW50cy5leGFtcGxlLmNvbSJdLCJpbnN0cnVjdGVkQW1vdW50Ijp7ImN1cnJlbmN5IjoiRVVSIiwiYW1vdW50IjoiMjUwLjAwIn0sImNyZWRpdG9yTmFtZSI6IkpvaG4gU21pdGgiLCJjcmVkaXRvckFjY291bnQiOnsiaWJhbiI6IkRFMDIxMDAxMDAxMDkzMDcxMTg2MDMifX1dfQ",
+          "signing_key_hint": "AS's ES256 private key (kid: auth-key-1)",
+          "final_output": "mock_sig",
+          "steps": [
+            {
+              "label": "Access token payload \u2014 authorization_details embedded",
+              "value": "{\n  \"iss\": \"https://auth.example.com\",\n  \"sub\": \"user_alice_482\",\n  \"aud\": \"https://payments.example.com\",\n  \"exp\": 1700000300,\n  \"iat\": 1700000000,\n  \"jti\": \"rar1a2b3c4\",\n  \"client_id\": \"bankapp-client\",\n  \"authorization_details\": [\n    {\n      \"type\": \"payment_initiation\",\n      \"actions\": [\"initiate\"],\n      \"locations\": [\"https://payments.example.com\"],\n      \"instructedAmount\": {\n        \"currency\": \"EUR\",\n        \"amount\": \"250.00\"\n      },\n      \"creditorName\": \"John Smith\",\n      \"creditorAccount\": {\n        \"iban\": \"DE02100100109307118603\"\n      },\n      \"remittanceInformation\": \"Invoice #2024-0042\"\n    }\n  ]\n}\n\nRFC 9396 \u00a77: The AS MUST embed the granted authorization_details\nin the access token. The RS uses this to enforce the exact\npermitted operation \u2014 not just 'can make payments' but 'can make\nexactly this \u20ac250 payment to this specific IBAN'.\n\nNote: expires_in=300 (5 minutes) \u2014 payment tokens are typically\nshort-lived. There is usually no refresh token for one-time\npayment initiation."
+            }
+          ]
+        }
+      ],
+      "tokens": [
+        {
+          "name": "Access Token (with authorization_details)",
+          "typ": "at+jwt",
+          "raw": "eyJ0eXAiOiJhdCtqd3QiLCJhbGciOiJFUzI1NiIsImtpZCI6ImF1dGgta2V5LTEifQ.eyJpc3MiOiJodHRwczovL2F1dGguZXhhbXBsZS5jb20iLCJzdWIiOiJ1c2VyX2FsaWNlXzQ4MiIsImF1ZCI6Imh0dHBzOi8vcGF5bWVudHMuZXhhbXBsZS5jb20iLCJleHAiOjE3MDAwMDM2MDAsImlhdCI6MTcwMDAwMDAwMCwianRpIjoicmFyMWEyYjNjNCIsImNsaWVudF9pZCI6ImJhbmthcHAtY2xpZW50IiwiYXV0aG9yaXphdGlvbl9kZXRhaWxzIjpbeyJ0eXBlIjoicGF5bWVudF9pbml0aWF0aW9uIiwiYWN0aW9ucyI6WyJpbml0aWF0ZSJdLCJsb2NhdGlvbnMiOlsiaHR0cHM6Ly9wYXltZW50cy5leGFtcGxlLmNvbSJdLCJpbnN0cnVjdGVkQW1vdW50Ijp7ImN1cnJlbmN5IjoiRVVSIiwiYW1vdW50IjoiMjUwLjAwIn0sImNyZWRpdG9yTmFtZSI6IkpvaG4gU21pdGgiLCJjcmVkaXRvckFjY291bnQiOnsiaWJhbiI6IkRFMDIxMDAxMDAxMDkzMDcxMTg2MDMifX1dfQ.mock_sig",
+          "header": {
+            "typ": "at+jwt",
+            "alg": "ES256",
+            "kid": "auth-key-1"
+          },
+          "payload": {
+            "iss": "https://auth.example.com",
+            "sub": "user_alice_482",
+            "aud": "https://payments.example.com",
+            "exp": 1700000300,
+            "iat": 1700000000,
+            "jti": "rar1a2b3c4",
+            "client_id": "bankapp-client",
+            "authorization_details": [
+              {
+                "type": "payment_initiation",
+                "actions": ["initiate"],
+                "locations": ["https://payments.example.com"],
+                "instructedAmount": {
+                  "currency": "EUR",
+                  "amount": "250.00"
+                },
+                "creditorName": "John Smith",
+                "creditorAccount": {
+                  "iban": "DE02100100109307118603"
+                },
+                "remittanceInformation": "Invoice #2024-0042"
+              }
+            ]
+          },
+          "signature_b64": "mock_sig"
+        }
+      ],
+      "explanation": "The AS issues an access token with the authorization_details embedded directly in the payload. The token is not a generic 'payment access' credential \u2014 it is a cryptographically signed authorization for exactly one \u20ac250 payment to John Smith. The token response also echoes the authorization_details for the client's use.",
+      "annotations": [
+        "RFC 9396 \u00a77: The AS MUST include authorization_details in the access token. The RS is the enforcement point.",
+        "expires_in=300 (5 min) is typical for payment tokens \u2014 short-lived to minimize the window of misuse. No refresh token is issued for single-use operations.",
+        "The aud claim is scoped to the specific payments API location (https://payments.example.com) from the authorization_details.locations field.",
+        "RFC 9396 \u00a75: The AS MAY grant a subset of the requested authorization_details. The client MUST check that the granted details are sufficient for the operation before proceeding."
+      ]
+    },
+    {
+      "step": 6,
+      "from": "client",
+      "to": "rs",
+      "label": "POST /payments (initiate payment)",
+      "method": "POST",
+      "url": "https://payments.example.com/payments",
+      "request_headers": {
+        "Authorization": "Bearer eyJ0eXAiOiJhdCtqd3QiLCJhbGciOiJFUzI1NiIsImtpZCI6ImF1dGgta2V5LTEifQ.eyJpc3MiOiJodHRwczovL2F1dGguZXhhbXBsZS5jb20iLCJzdWIiOiJ1c2VyX2FsaWNlXzQ4MiIsImF1ZCI6Imh0dHBzOi8vcGF5bWVudHMuZXhhbXBsZS5jb20iLCJleHAiOjE3MDAwMDM2MDAsImlhdCI6MTcwMDAwMDAwMCwianRpIjoicmFyMWEyYjNjNCIsImNsaWVudF9pZCI6ImJhbmthcHAtY2xpZW50IiwiYXV0aG9yaXphdGlvbl9kZXRhaWxzIjpbeyJ0eXBlIjoicGF5bWVudF9pbml0aWF0aW9uIiwiYWN0aW9ucyI6WyJpbml0aWF0ZSJdLCJsb2NhdGlvbnMiOlsiaHR0cHM6Ly9wYXltZW50cy5leGFtcGxlLmNvbSJdLCJpbnN0cnVjdGVkQW1vdW50Ijp7ImN1cnJlbmN5IjoiRVVSIiwiYW1vdW50IjoiMjUwLjAwIn0sImNyZWRpdG9yTmFtZSI6IkpvaG4gU21pdGgiLCJjcmVkaXRvckFjY291bnQiOnsiaWJhbiI6IkRFMDIxMDAxMDAxMDkzMDcxMTg2MDMifX1dfQ.mock_sig",
+        "Content-Type": "application/json"
+      },
+      "request_body": {
+        "instructedAmount": {
+          "currency": "EUR",
+          "amount": "250.00"
+        },
+        "creditorName": "John Smith",
+        "creditorAccount": {
+          "iban": "DE02100100109307118603"
+        },
+        "remittanceInformation": "Invoice #2024-0042"
+      },
+      "response_status": 201,
+      "response_headers": {
+        "Content-Type": "application/json",
+        "Location": "https://payments.example.com/payments/pay_xyz789"
+      },
+      "response_body": {
+        "paymentId": "pay_xyz789",
+        "status": "AcceptedSettlementInProcess",
+        "instructedAmount": {
+          "currency": "EUR",
+          "amount": "250.00"
+        },
+        "creditorName": "John Smith",
+        "creditorAccount": {
+          "iban": "DE02100100109307118603"
+        }
+      },
+      "artifacts": [],
+      "tokens": [],
+      "explanation": "The client submits the payment request. The Payments API validates the access token and cross-checks every field in the request body against the authorization_details in the token. Amount, currency, IBAN, and recipient must all match exactly \u2014 any deviation is rejected.",
+      "annotations": [
+        "RS enforcement: amount in request body (250.00 EUR) MUST match authorization_details.instructedAmount. A request for \u20ac500 would be rejected even with a valid token.",
+        "RS enforcement: creditorAccount.iban in request MUST match authorization_details.creditorAccount.iban. The token cannot be reused to pay a different recipient.",
+        "RS enforcement: actions=[\"initiate\"] means the token can only initiate the payment, not cancel or modify it. Different actions require separate authorization.",
+        "This is the fundamental difference from scope-based access: the RS has cryptographic proof (via the signed token) of exactly what the user approved \u2014 not just a category of operations.",
+        "RAR pairs with PAR for high-security deployments: PAR pushes the full authorization_details server-to-server (no URL exposure), while RAR provides the fine-grained semantics."
+      ]
+    }
+  ]
+}

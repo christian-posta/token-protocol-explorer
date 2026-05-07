@@ -37,10 +37,22 @@ const NAV: NavSection[] = [
     title: "OAuth 2.0",
     color: "text-indigo-400",
     items: [
+      { label: "Authorization Code + PKCE", href: "/oauth2/authorization-code" },
+      { label: "Device Authorization (RFC 8628)", href: "/oauth2/device-authorization" },
+      { label: "Refresh Token Grant", href: "/oauth2/refresh-token" },
+      { label: "PAR (RFC 9126)", href: "/oauth2/par" },
+      { label: "RAR (RFC 9396)", href: "/oauth2/rar" },
       { label: "DPoP (RFC 9449)", href: "/oauth2/dpop" },
       { label: "Token Exchange: Delegation", href: "/oauth2/token-exchange-delegation" },
       { label: "Token Exchange: Impersonation", href: "/oauth2/token-exchange-impersonation" },
       { label: "Txn-Tokens (Draft)", href: "/oauth2/transaction-tokens" },
+    ],
+  },
+  {
+    title: "OpenID Connect",
+    color: "text-violet-400",
+    items: [
+      { label: "Authorization Code Flow", href: "/oidc/basic-flow" },
     ],
   },
   {

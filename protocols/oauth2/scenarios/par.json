@@ -1,0 +1,243 @@
+{
+  "id": "oauth2-par",
+  "title": "OAuth 2.0 \u2014 Pushed Authorization Requests (PAR)",
+  "description": "Pushed Authorization Requests (RFC 9126) flip the normal authorization flow: instead of encoding the full authorization request in the browser redirect URL, the client POSTs the request directly to the AS server-to-server first and receives a short-lived request_uri. The browser redirect carries only the client_id and request_uri. This prevents tampering (request params never touch the browser), supports arbitrarily large requests (e.g., Rich Authorization Requests), and gives the AS early validation before the user ever sees a prompt.",
+  "rfc": "RFC 9126",
+  "specUrl": "https://datatracker.ietf.org/doc/html/rfc9126",
+  "category": "OAuth 2.0",
+  "participants": [
+    { "id": "client", "label": "Web App", "type": "client" },
+    { "id": "as", "label": "Authorization Server", "type": "idp" },
+    { "id": "browser", "label": "Browser / User", "type": "user" },
+    { "id": "rs", "label": "Resource Server", "type": "server" }
+  ],
+  "steps": [
+    {
+      "step": 1,
+      "from": "client",
+      "to": "as",
+      "label": "POST /par (push auth request)",
+      "method": "POST",
+      "url": "https://auth.example.com/par",
+      "request_headers": {
+        "Content-Type": "application/x-www-form-urlencoded",
+        "Authorization": "Basic czZCaGRSa3F0MzpnWDFmQmF0M2JW"
+      },
+      "request_body": "response_type=code&client_id=s6BhdRkqt3&redirect_uri=https%3A%2F%2Fapp.example.com%2Fcallback&scope=read:profile+write:reports&state=af0ifjsldkj&code_challenge=E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM&code_challenge_method=S256",
+      "response_status": 201,
+      "response_headers": {
+        "Content-Type": "application/json",
+        "Cache-Control": "no-store"
+      },
+      "response_body": {
+        "request_uri": "urn:ietf:params:oauth:request_uri:6esc_11ACC5bwc014ltc14eY",
+        "expires_in": 60
+      },
+      "artifacts": [
+        {
+          "type": "custom",
+          "raw_input": "Full authorization request parameters posted server-to-server",
+          "signing_key_hint": "Client authenticates with client_secret_basic (same as token endpoint)",
+          "final_output": "request_uri = urn:ietf:params:oauth:request_uri:6esc_11ACC5bwc014ltc14eY (expires in 60s)",
+          "steps": [
+            {
+              "label": "1. Why push the request first?",
+              "value": "Traditional authorization code flow puts ALL parameters in the browser\nredirect URL:\n\n  https://as.example.com/authorize\n    ?response_type=code\n    &client_id=s6BhdRkqt3\n    &redirect_uri=https://app.example.com/callback\n    &scope=read:profile+write:reports\n    &state=af0ifjsldkj\n    &code_challenge=E9Melhoa...    \u2190 visible in browser history\n    &code_challenge_method=S256      and server logs\n\nProblems with URL-based requests:\n  \u2022 Visible in browser history, server logs, Referer headers\n  \u2022 Can be tampered with before the AS receives them\n  \u2022 URL length limits prevent large payloads (e.g., RAR authorization_details)\n  \u2022 No AS validation until the user reaches the AS\n\nPAR solution: POST the full request directly to the AS first."
+            },
+            {
+              "label": "2. What the AS validates immediately (pre-flight)",
+              "value": "On receiving the PAR request, the AS validates everything NOW\u2014before\nthe user ever sees a browser prompt:\n\n  \u2022 Client authentication (Basic auth header)\n  \u2022 client_id is registered\n  \u2022 redirect_uri exactly matches a registered URI\n  \u2022 response_type and requested scopes (read:profile, write:reports) are permitted for this client\n  \u2022 code_challenge is present (if PKCE is required)\n\nIf any check fails \u2192 400 error response to the client.\nThe browser is never involved in a failed request \u2014 no confusing\nerror pages for the user, and no partial state on the AS."
+            },
+            {
+              "label": "3. The request_uri \u2014 a short-lived pointer",
+              "value": "request_uri = \"urn:ietf:params:oauth:request_uri:6esc_11ACC5bwc014ltc14eY\"\n\nRFC 9126 \u00a72.2: The request_uri:\n  \u2022 Format is at the AS's discretion (urn:ietf:params:oauth:request_uri: is conventional)\n  \u2022 Is a single-use opaque reference to the stored request object\n  \u2022 Expires in `expires_in` seconds (typically 30\u201360 seconds)\n  \u2022 Is bound to the client_id that created it\n\nThe stored request object includes ALL original parameters.\nThe browser URL in the next step carries ONLY client_id + request_uri."
+            }
+          ]
+        }
+      ],
+      "tokens": [],
+      "explanation": "The client POSTs the full authorization request to the AS's PAR endpoint server-to-server, before involving the browser. The AS validates the request immediately and returns a short-lived request_uri that acts as a pointer to the stored request. The client authenticates in the same way it would at the token endpoint.",
+      "annotations": [
+        "RFC 9126 \u00a72.1: The PAR endpoint MUST require client authentication for confidential clients.",
+        "RFC 9126 \u00a72.2: The AS responds with 201 Created (not 200) when the request is successfully stored.",
+        "expires_in=60: The request_uri must be used within 60 seconds or it expires. This prevents stale authorization requests.",
+        "Scopes (`read:profile`, `write:reports`) are application-defined permission strings that describe exactly what access is being requested on the user's behalf. The AS validates that this client is permitted to request these scopes before issuing the request_uri.",
+        "PAR pairs naturally with JAR (JWT-Secured Authorization Requests, RFC 9101) \u2014 the pushed body can be a signed JWT for non-repudiation of the authorization request itself.",
+        "PAR is required by FAPI 2.0 Security Profile for high-security financial-grade APIs."
+      ]
+    },
+    {
+      "step": 2,
+      "from": "browser",
+      "to": "as",
+      "label": "GET /authorize?request_uri=... (clean URL)",
+      "method": "GET",
+      "url": "https://auth.example.com/authorize?client_id=s6BhdRkqt3&request_uri=urn%3Aietf%3Aparams%3Aoauth%3Arequest_uri%3A6esc_11ACC5bwc014ltc14eY",
+      "request_headers": {
+        "Accept": "text/html"
+      },
+      "request_body": null,
+      "response_status": 200,
+      "response_headers": {
+        "Content-Type": "text/html; charset=utf-8"
+      },
+      "response_body": null,
+      "artifacts": [
+        {
+          "type": "custom",
+          "raw_input": "?client_id=s6BhdRkqt3&request_uri=urn:ietf:params:oauth:request_uri:6esc_11ACC5bwc014ltc14eY",
+          "signing_key_hint": "Compare with traditional authorization URL",
+          "final_output": "Only 2 parameters in the URL vs 6+ in the traditional flow",
+          "steps": [
+            {
+              "label": "Traditional URL vs PAR URL",
+              "value": "TRADITIONAL (all params in URL):\nhttps://as.example.com/authorize\n  ?response_type=code\n  &client_id=s6BhdRkqt3\n  &redirect_uri=https://app.example.com/callback\n  &scope=read:profile+write:reports\n  &state=af0ifjsldkj\n  &code_challenge=E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM\n  &code_challenge_method=S256\n\nPAR (request_uri only):\nhttps://as.example.com/authorize\n  ?client_id=s6BhdRkqt3\n  &request_uri=urn:ietf:params:oauth:request_uri:6esc_11ACC5bwc014ltc14eY\n\nBenefits of the PAR URL:\n  \u2022 Parameters not visible in browser history or Referer headers\n  \u2022 Cannot be tampered with in transit (stored on AS)\n  \u2022 Works with arbitrarily large payloads (RAR authorization_details)\n  \u2022 AS already validated the request in step 1 \u2014 no surprises"
+            }
+          ]
+        }
+      ],
+      "tokens": [],
+      "explanation": "The client redirects the browser to the AS /authorize endpoint with only two parameters: client_id and request_uri. The full authorization request is stored server-side on the AS. The browser URL is short, clean, and contains no sensitive parameters.",
+      "annotations": [
+        "RFC 9126 \u00a74: The AS MUST validate that the request_uri corresponds to a request previously submitted by the same client_id.",
+        "The request_uri is single-use \u2014 the AS SHOULD invalidate it after the authorization response is issued to prevent replay.",
+        "If the request_uri has expired (> expires_in seconds), the AS returns error=invalid_request_uri.",
+        "The AS SHOULD NOT allow the same request_uri to be used more than once, even within the expiry window."
+      ]
+    },
+    {
+      "step": 3,
+      "from": "browser",
+      "to": "as",
+      "label": "POST /login (credentials + consent)",
+      "method": "POST",
+      "url": "https://auth.example.com/login",
+      "request_headers": {
+        "Content-Type": "application/x-www-form-urlencoded",
+        "Cookie": "as_session=abc123"
+      },
+      "request_body": "username=alice%40example.com&password=hunter2&consent=granted&csrf_token=qrs456",
+      "response_status": 302,
+      "response_headers": {
+        "Location": "https://app.example.com/callback?code=SplxlOBeZQQYbYS6WxSbIA&state=af0ifjsldkj"
+      },
+      "response_body": null,
+      "artifacts": [],
+      "tokens": [],
+      "explanation": "The user authenticates and grants consent. The AS issues a short-lived authorization code and redirects the browser back to the redirect_uri it already validated in step 1. The state parameter is returned verbatim.",
+      "annotations": [
+        "The AS uses the stored request object (retrieved via request_uri) to determine the redirect_uri, scope, and state to include in this response.",
+        "RFC 9126 \u00a74: The redirect_uri used here is the one from the stored PAR request \u2014 it cannot be overridden by the browser request parameters.",
+        "This is a key integrity benefit: even if someone modified the browser URL between steps 1 and 2, the AS uses the server-stored parameters, not any URL-borne parameters."
+      ]
+    },
+    {
+      "step": 4,
+      "from": "browser",
+      "to": "client",
+      "label": "GET /callback?code=...&state=...",
+      "method": "GET",
+      "url": "https://app.example.com/callback?code=SplxlOBeZQQYbYS6WxSbIA&state=af0ifjsldkj",
+      "request_headers": {
+        "Cookie": "oauth_state=af0ifjsldkj"
+      },
+      "request_body": null,
+      "response_status": 200,
+      "response_headers": {
+        "Content-Type": "text/html"
+      },
+      "response_body": null,
+      "artifacts": [],
+      "tokens": [],
+      "explanation": "The browser follows the AS redirect back to the client callback endpoint. The client validates the state, then proceeds to exchange the authorization code for tokens.",
+      "annotations": [
+        "State validation is identical to the standard authorization code flow \u2014 the client verifies the returned state matches the value from step 1.",
+        "The PKCE code_verifier is stored server-side from step 1 and will be sent in the token request."
+      ]
+    },
+    {
+      "step": 5,
+      "from": "client",
+      "to": "as",
+      "label": "POST /token (code exchange + PKCE)",
+      "method": "POST",
+      "url": "https://auth.example.com/token",
+      "request_headers": {
+        "Content-Type": "application/x-www-form-urlencoded",
+        "Authorization": "Basic czZCaGRSa3F0MzpnWDFmQmF0M2JW"
+      },
+      "request_body": "grant_type=authorization_code&code=SplxlOBeZQQYbYS6WxSbIA&redirect_uri=https%3A%2F%2Fapp.example.com%2Fcallback&code_verifier=dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk",
+      "response_status": 200,
+      "response_headers": {
+        "Content-Type": "application/json",
+        "Cache-Control": "no-store"
+      },
+      "response_body": {
+        "access_token": "eyJ0eXAiOiJhdCtqd3QiLCJhbGciOiJFUzI1NiIsImtpZCI6ImF1dGgta2V5LTEifQ.eyJpc3MiOiJodHRwczovL2F1dGguZXhhbXBsZS5jb20iLCJzdWIiOiJ1c2VyX2FsaWNlXzQ4MiIsImF1ZCI6Imh0dHBzOi8vYXBpLmV4YW1wbGUuY29tIiwiZXhwIjoxNzAwMDAzNjAwLCJpYXQiOjE3MDAwMDAwMDAsImp0aSI6InBhcjFhMmIzYzQiLCJjbGllbnRfaWQiOiJzNkJoZFJrcXQzIiwic2NvcGUiOiJwcm9maWxlIGVtYWlsIn0.mock_sig",
+        "token_type": "Bearer",
+        "expires_in": 3600,
+        "refresh_token": "tGzv3JOkF0XG5Qx2TlKWIA",
+        "scope": "read:profile write:reports"
+      },
+      "artifacts": [],
+      "tokens": [
+        {
+          "name": "Access Token",
+          "typ": "at+jwt",
+          "raw": "eyJ0eXAiOiJhdCtqd3QiLCJhbGciOiJFUzI1NiIsImtpZCI6ImF1dGgta2V5LTEifQ.eyJpc3MiOiJodHRwczovL2F1dGguZXhhbXBsZS5jb20iLCJzdWIiOiJ1c2VyX2FsaWNlXzQ4MiIsImF1ZCI6Imh0dHBzOi8vYXBpLmV4YW1wbGUuY29tIiwiZXhwIjoxNzAwMDAzNjAwLCJpYXQiOjE3MDAwMDAwMDAsImp0aSI6InBhcjFhMmIzYzQiLCJjbGllbnRfaWQiOiJzNkJoZFJrcXQzIiwic2NvcGUiOiJwcm9maWxlIGVtYWlsIn0.mock_sig",
+          "header": {
+            "typ": "at+jwt",
+            "alg": "ES256",
+            "kid": "auth-key-1"
+          },
+          "payload": {
+            "iss": "https://auth.example.com",
+            "sub": "user_alice_482",
+            "aud": "https://api.example.com",
+            "exp": 1700003600,
+            "iat": 1700000000,
+            "jti": "par1a2b3c4",
+            "client_id": "s6BhdRkqt3",
+            "scope": "read:profile write:reports"
+          },
+          "signature_b64": "mock_sig"
+        }
+      ],
+      "explanation": "The token exchange is identical to the standard Authorization Code flow. The AS verifies the PKCE code_verifier and issues tokens. From this point the flow is indistinguishable from a non-PAR authorization.",
+      "annotations": [
+        "The token request does not reference the request_uri \u2014 it uses the authorization code issued in step 3 and the code_verifier from step 1.",
+        "PAR's security benefits (request integrity, pre-flight validation) are entirely in steps 1\u20132. The rest of the flow is unchanged.",
+        "PAR and PKCE are complementary: PAR secures the authorization request, PKCE secures the code. FAPI 2.0 requires both."
+      ]
+    },
+    {
+      "step": 6,
+      "from": "client",
+      "to": "rs",
+      "label": "GET /api/profile",
+      "method": "GET",
+      "url": "https://api.example.com/profile",
+      "request_headers": {
+        "Authorization": "Bearer eyJ0eXAiOiJhdCtqd3QiLCJhbGciOiJFUzI1NiIsImtpZCI6ImF1dGgta2V5LTEifQ.eyJpc3MiOiJodHRwczovL2F1dGguZXhhbXBsZS5jb20iLCJzdWIiOiJ1c2VyX2FsaWNlXzQ4MiIsImF1ZCI6Imh0dHBzOi8vYXBpLmV4YW1wbGUuY29tIiwiZXhwIjoxNzAwMDAzNjAwLCJpYXQiOjE3MDAwMDAwMDAsImp0aSI6InBhcjFhMmIzYzQiLCJjbGllbnRfaWQiOiJzNkJoZFJrcXQzIiwic2NvcGUiOiJwcm9maWxlIGVtYWlsIn0.mock_sig",
+        "Accept": "application/json"
+      },
+      "request_body": null,
+      "response_status": 200,
+      "response_headers": {
+        "Content-Type": "application/json"
+      },
+      "response_body": {
+        "user_id": "user_alice_482",
+        "name": "Alice Example",
+        "email": "alice@example.com"
+      },
+      "artifacts": [],
+      "tokens": [],
+      "explanation": "The client uses the access token to call the protected API. The resource server has no knowledge of whether PAR was used \u2014 the access token is identical to one obtained via the standard authorization code flow.",
+      "annotations": [
+        "PAR is transparent to the resource server. Its security benefits are realized entirely during the authorization request phase.",
+        "For high-security flows combining PAR + RAR, the access token would additionally contain an authorization_details claim with the specific operations authorized. See the RAR scenario for details."
+      ]
+    }
+  ]
+}

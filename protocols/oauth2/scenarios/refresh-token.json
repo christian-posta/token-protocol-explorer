@@ -1,0 +1,231 @@
+{
+  "id": "oauth2-refresh-token",
+  "title": "OAuth 2.0 \u2014 Refresh Token Grant",
+  "description": "Access tokens are intentionally short-lived (minutes to hours). When one expires, the client uses its refresh token to obtain a new access token from the Authorization Server \u2014 without requiring the user to re-authenticate. This flow covers the full lifecycle: detecting a 401, silently refreshing, retrying the request, refresh token rotation (a security best practice), and what happens when the refresh token itself expires or is replayed after rotation.",
+  "rfc": "RFC 6749 \u00a76",
+  "specUrl": "https://datatracker.ietf.org/doc/html/rfc6749#section-6",
+  "category": "OAuth 2.0",
+  "participants": [
+    { "id": "client", "label": "Web App", "type": "client" },
+    { "id": "as", "label": "Authorization Server", "type": "idp" },
+    { "id": "rs", "label": "Resource Server", "type": "server" }
+  ],
+  "steps": [
+    {
+      "step": 1,
+      "from": "client",
+      "to": "rs",
+      "label": "GET /api/profile (expired token \u2192 401)",
+      "method": "GET",
+      "url": "https://api.example.com/profile",
+      "request_headers": {
+        "Authorization": "Bearer eyJ0eXAiOiJhdCtqd3QiLCJhbGciOiJFUzI1NiIsImtpZCI6ImF1dGgta2V5LTEifQ.eyJpc3MiOiJodHRwczovL2F1dGguZXhhbXBsZS5jb20iLCJzdWIiOiJ1c2VyX2FsaWNlXzQ4MiIsImF1ZCI6Imh0dHBzOi8vYXBpLmV4YW1wbGUuY29tIiwiZXhwIjoxNjk5OTk5MDAwLCJpYXQiOjE2OTk5OTU0MDAsImp0aSI6Im9sZC1hdC0xMjMifQ.mock_old_sig",
+        "Accept": "application/json"
+      },
+      "request_body": null,
+      "response_status": 401,
+      "response_headers": {
+        "Content-Type": "application/json",
+        "WWW-Authenticate": "Bearer realm=\"api.example.com\", error=\"invalid_token\", error_description=\"The access token expired\""
+      },
+      "response_body": {
+        "error": "invalid_token",
+        "error_description": "The access token has expired"
+      },
+      "artifacts": [
+        {
+          "type": "jwt",
+          "raw_input": "eyJ0eXAiOiJhdCtqd3QiLCJhbGciOiJFUzI1NiIsImtpZCI6ImF1dGgta2V5LTEifQ.eyJpc3MiOiJodHRwczovL2F1dGguZXhhbXBsZS5jb20iLCJzdWIiOiJ1c2VyX2FsaWNlXzQ4MiIsImF1ZCI6Imh0dHBzOi8vYXBpLmV4YW1wbGUuY29tIiwiZXhwIjoxNjk5OTk5MDAwLCJpYXQiOjE2OTk5OTU0MDAsImp0aSI6Im9sZC1hdC0xMjMifQ",
+          "signing_key_hint": "AS's ES256 key \u2014 signature valid, but exp has passed",
+          "final_output": "401 Unauthorized \u2014 exp=1699999000 < now=1700002600",
+          "steps": [
+            {
+              "label": "Why the token is rejected",
+              "value": "Access token payload:\n{\n  \"iss\": \"https://auth.example.com\",\n  \"sub\": \"user_alice_482\",\n  \"aud\": \"https://api.example.com\",\n  \"exp\": 1699999000,   \u2190 expired at 2023-11-14T23:50:00Z\n  \"iat\": 1699995400,\n  \"jti\": \"old-at-123\"\n}\n\nRS validation sequence:\n  1. Fetch AS public key from JWKS \u2192 signature OK \u2713\n  2. iss matches expected AS \u2713\n  3. aud matches this RS \u2713\n  4. exp check: 1699999000 < now (1700002600) \u2192 EXPIRED \u2717\n\nThe RS returns 401 with WWW-Authenticate indicating\nerror=invalid_token. The client must refresh.\n\nAccess tokens are kept short-lived (minutes to a few hours)\ndeliberately. If a token is stolen, it quickly becomes useless.\nOAuth Security Best Current Practice (RFC 9700) recommends\nkeeping access token lifetimes as short as feasible."
+            }
+          ]
+        }
+      ],
+      "tokens": [
+        {
+          "name": "Expired Access Token",
+          "typ": "at+jwt",
+          "raw": "eyJ0eXAiOiJhdCtqd3QiLCJhbGciOiJFUzI1NiIsImtpZCI6ImF1dGgta2V5LTEifQ.eyJpc3MiOiJodHRwczovL2F1dGguZXhhbXBsZS5jb20iLCJzdWIiOiJ1c2VyX2FsaWNlXzQ4MiIsImF1ZCI6Imh0dHBzOi8vYXBpLmV4YW1wbGUuY29tIiwiZXhwIjoxNjk5OTk5MDAwLCJpYXQiOjE2OTk5OTU0MDAsImp0aSI6Im9sZC1hdC0xMjMifQ.mock_old_sig",
+          "header": {
+            "typ": "at+jwt",
+            "alg": "ES256",
+            "kid": "auth-key-1"
+          },
+          "payload": {
+            "iss": "https://auth.example.com",
+            "sub": "user_alice_482",
+            "aud": "https://api.example.com",
+            "exp": 1699999000,
+            "iat": 1699995400,
+            "jti": "old-at-123"
+          },
+          "signature_b64": "mock_old_sig"
+        }
+      ],
+      "explanation": "The client makes an API request with an access token that has expired. The resource server validates the JWT, confirms the signature and claims are otherwise valid, but rejects the request because exp < now. It returns a 401 with WWW-Authenticate indicating error=invalid_token.",
+      "annotations": [
+        "RFC 6750 \u00a73.1: The RS MUST respond with HTTP 401 and a WWW-Authenticate header including error=invalid_token when the access token has expired.",
+        "The client should check exp before sending requests (clock skew: subtract ~30 seconds) to avoid making a request that will fail. But it must also handle 401 for unexpected expirations.",
+        "Short-lived access tokens are a security feature. A stolen token has a limited window of usefulness. The refresh token enables transparent renewal without user friction.",
+        "The client should not reveal to the user that the token expired \u2014 it should silently refresh and retry the original request."
+      ]
+    },
+    {
+      "step": 2,
+      "from": "client",
+      "to": "as",
+      "label": "POST /token (refresh_token grant)",
+      "method": "POST",
+      "url": "https://auth.example.com/token",
+      "request_headers": {
+        "Content-Type": "application/x-www-form-urlencoded",
+        "Authorization": "Basic czZCaGRSa3F0MzpnWDFmQmF0M2JW"
+      },
+      "request_body": "grant_type=refresh_token&refresh_token=tGzv3JOkF0XG5Qx2TlKWIA",
+      "response_status": 200,
+      "response_headers": {
+        "Content-Type": "application/json",
+        "Cache-Control": "no-store"
+      },
+      "response_body": {
+        "access_token": "eyJ0eXAiOiJhdCtqd3QiLCJhbGciOiJFUzI1NiIsImtpZCI6ImF1dGgta2V5LTEifQ.eyJpc3MiOiJodHRwczovL2F1dGguZXhhbXBsZS5jb20iLCJzdWIiOiJ1c2VyX2FsaWNlXzQ4MiIsImF1ZCI6Imh0dHBzOi8vYXBpLmV4YW1wbGUuY29tIiwiZXhwIjoxNzAwMDA2MjAwLCJpYXQiOjE3MDAwMDI2MDAsImp0aSI6Im5ldy1hdC00NTYiLCJjbGllbnRfaWQiOiJzNkJoZFJrcXQzIiwic2NvcGUiOiJwcm9maWxlIGVtYWlsIn0.mock_new_sig",
+        "token_type": "Bearer",
+        "expires_in": 3600,
+        "refresh_token": "8xLOxBtZp8Ry7q4mNbKWIA",
+        "scope": "read:profile write:reports"
+      },
+      "artifacts": [
+        {
+          "type": "custom",
+          "raw_input": "grant_type=refresh_token&refresh_token=tGzv3JOkF0XG5Qx2TlKWIA",
+          "signing_key_hint": "AS validates refresh token and applies rotation policy",
+          "final_output": "New access token + new (rotated) refresh token. Old refresh token invalidated.",
+          "steps": [
+            {
+              "label": "1. AS validates the refresh token",
+              "value": "The AS checks the submitted refresh token:\n  \u2022 Is it in the valid token store? (not revoked, not expired)\n  \u2022 Does it belong to client_id=s6BhdRkqt3? (binding check)\n  \u2022 Is the client authentication valid? (Basic auth header)\n  \u2022 Has the user's authorization been revoked?\n\nRFC 6749 \u00a76: The AS MUST verify the refresh token was issued\nto the authenticated client. A refresh token presented by a\ndifferent client MUST be rejected."
+            },
+            {
+              "label": "2. Refresh token rotation (security best practice)",
+              "value": "Rotation policy: issue a NEW refresh token, invalidate the OLD one.\n\n  old: tGzv3JOkF0XG5Qx2TlKWIA  \u2190 invalidated immediately\n  new: 8xLOxBtZp8Ry7q4mNbKWIA  \u2190 issued, stored by client\n\nWhy rotation matters:\n  If an attacker steals a refresh token and uses it, the\n  legitimate client's NEXT refresh attempt will fail with\n  invalid_grant (the old RT is gone). This tells the\n  legitimate client that something is wrong.\n\n  If the AS detects a refresh token from an already-rotated\n  family (\"RT family invalidation\" / \"refresh token reuse\"),\n  it SHOULD revoke the ENTIRE token family for that user+client\n  pair \u2014 a sign of token theft. See step 4.\n\nRFC 9700 Best Current Practice \u00a72.2.2: Rotation is strongly\nrecommended. Sender-constrained refresh tokens (e.g., DPoP-\nbound) provide additional protection if the token is leaked."
+            },
+            {
+              "label": "3. What the AS can change on refresh",
+              "value": "On issuing new tokens, the AS:\n  \u2022 MUST NOT expand the scope beyond what was originally granted\n  \u2022 MAY issue a shorter-lived access token (step-down)\n  \u2022 MAY choose NOT to rotate the refresh token (less secure)\n  \u2022 MAY change the access token's claims (e.g., updated roles)\n  \u2022 MUST check that the user's authorization is still valid\n    (the user may have revoked consent since the original grant)\n\nScope downscoping: The client MAY request a subset of the\noriginal scope: grant_type=refresh_token&refresh_token=...&scope=read:profile\n(omitting write:reports). The AS MUST NOT grant more than the original."
+            }
+          ]
+        }
+      ],
+      "tokens": [
+        {
+          "name": "New Access Token",
+          "typ": "at+jwt",
+          "raw": "eyJ0eXAiOiJhdCtqd3QiLCJhbGciOiJFUzI1NiIsImtpZCI6ImF1dGgta2V5LTEifQ.eyJpc3MiOiJodHRwczovL2F1dGguZXhhbXBsZS5jb20iLCJzdWIiOiJ1c2VyX2FsaWNlXzQ4MiIsImF1ZCI6Imh0dHBzOi8vYXBpLmV4YW1wbGUuY29tIiwiZXhwIjoxNzAwMDA2MjAwLCJpYXQiOjE3MDAwMDI2MDAsImp0aSI6Im5ldy1hdC00NTYiLCJjbGllbnRfaWQiOiJzNkJoZFJrcXQzIiwic2NvcGUiOiJwcm9maWxlIGVtYWlsIn0.mock_new_sig",
+          "header": {
+            "typ": "at+jwt",
+            "alg": "ES256",
+            "kid": "auth-key-1"
+          },
+          "payload": {
+            "iss": "https://auth.example.com",
+            "sub": "user_alice_482",
+            "aud": "https://api.example.com",
+            "exp": 1700006200,
+            "iat": 1700002600,
+            "jti": "new-at-456",
+            "client_id": "s6BhdRkqt3",
+            "scope": "read:profile write:reports"
+          },
+          "signature_b64": "mock_new_sig"
+        }
+      ],
+      "explanation": "The client silently exchanges its refresh token for a new access token. The AS issues a fresh access token and a rotated refresh token (the old refresh token is immediately invalidated). The user sees none of this \u2014 from their perspective, the app just keeps working.",
+      "annotations": [
+        "RFC 6749 \u00a76: grant_type=refresh_token. The refresh_token is the only required body parameter (besides client authentication).",
+        "The scope in the new access token MUST NOT exceed the originally granted scope. The client MAY request a narrower scope.",
+        "Refresh tokens should be stored securely (encrypted at rest). If a public client (SPA, native app) cannot securely store secrets, use short-lived access tokens + silent re-authorization instead of refresh tokens.",
+        "RFC 9700 \u00a72.2.2: Sender-constrained refresh tokens (DPoP or mTLS bound) prevent stolen refresh tokens from being used by an attacker even if the storage is compromised."
+      ]
+    },
+    {
+      "step": 3,
+      "from": "client",
+      "to": "rs",
+      "label": "GET /api/profile (retry with new token \u2192 200)",
+      "method": "GET",
+      "url": "https://api.example.com/profile",
+      "request_headers": {
+        "Authorization": "Bearer eyJ0eXAiOiJhdCtqd3QiLCJhbGciOiJFUzI1NiIsImtpZCI6ImF1dGgta2V5LTEifQ.eyJpc3MiOiJodHRwczovL2F1dGguZXhhbXBsZS5jb20iLCJzdWIiOiJ1c2VyX2FsaWNlXzQ4MiIsImF1ZCI6Imh0dHBzOi8vYXBpLmV4YW1wbGUuY29tIiwiZXhwIjoxNzAwMDA2MjAwLCJpYXQiOjE3MDAwMDI2MDAsImp0aSI6Im5ldy1hdC00NTYiLCJjbGllbnRfaWQiOiJzNkJoZFJrcXQzIiwic2NvcGUiOiJwcm9maWxlIGVtYWlsIn0.mock_new_sig",
+        "Accept": "application/json"
+      },
+      "request_body": null,
+      "response_status": 200,
+      "response_headers": {
+        "Content-Type": "application/json"
+      },
+      "response_body": {
+        "user_id": "user_alice_482",
+        "name": "Alice Example",
+        "email": "alice@example.com",
+        "plan": "pro"
+      },
+      "artifacts": [],
+      "tokens": [],
+      "explanation": "The client retries the original API request with the new access token. The resource server validates the fresh token (exp is in the future) and returns the protected resource. The user experienced no interruption.",
+      "annotations": [
+        "The entire refresh cycle (steps 1\u20133) is transparent to the user \u2014 they see only a momentary delay (typically < 200ms) before the app continues normally.",
+        "Implementations should implement a proactive refresh: if exp - now < threshold (e.g., 30 seconds), refresh before making the API call rather than waiting for a 401.",
+        "The new access token has a fresh jti (new-at-456) \u2014 the RS sees it as a brand new token, not a renewal of the old one."
+      ]
+    },
+    {
+      "step": 4,
+      "from": "client",
+      "to": "as",
+      "label": "POST /token (old RT replayed \u2192 family revocation)",
+      "method": "POST",
+      "url": "https://auth.example.com/token",
+      "request_headers": {
+        "Content-Type": "application/x-www-form-urlencoded",
+        "Authorization": "Basic czZCaGRSa3F0MzpnWDFmQmF0M2JW"
+      },
+      "request_body": "grant_type=refresh_token&refresh_token=tGzv3JOkF0XG5Qx2TlKWIA",
+      "response_status": 400,
+      "response_headers": {
+        "Content-Type": "application/json",
+        "Cache-Control": "no-store"
+      },
+      "response_body": {
+        "error": "invalid_grant",
+        "error_description": "Refresh token has already been used (token reuse detected). All sessions for this client have been revoked."
+      },
+      "artifacts": [
+        {
+          "type": "custom",
+          "raw_input": "refresh_token=tGzv3JOkF0XG5Qx2TlKWIA (already rotated in step 2)",
+          "signing_key_hint": "AS detects reuse of a previously rotated refresh token",
+          "final_output": "error=invalid_grant + full family revocation (both old and new refresh tokens invalidated)",
+          "steps": [
+            {
+              "label": "Refresh token family invalidation (theft detection)",
+              "value": "Scenario: The original refresh token (tGzv3JOkF0XG5Qx2TlKWIA)\nwas stolen before step 2. The attacker uses it AFTER\nthe legitimate client already rotated it in step 2.\n\nTimeline:\n  t=0  : refresh_token=tGzv3...issued (auth code flow)\n  t=1h : legitimate client refreshes \u2192 rotated to 8xLOx...\n         old token tGzv3... INVALIDATED\n  t=1h+: ATTACKER presents tGzv3... (the old, rotated token)\n\nAS sees:\n  tGzv3... is in the \"used/rotated\" state (not valid, not fresh)\n\n  This is a REUSE event \u2014 the old token was already rotated.\n  Someone has a copy of it.\n\nAS response (RFC 9700 \u00a72.2.2):\n  \u2022 Reject the current request with invalid_grant\n  \u2022 Revoke the ENTIRE token family:\n      - tGzv3...  (old, already invalidated)\n      - 8xLOx...  (new, currently valid) \u2190 also revoked\n  \u2022 Both the attacker and legitimate client are now logged out\n\nWhy revoke the whole family?\n  Because we don\u2019t know WHO used the token first.\n  Either the attacker used it before the client (meaning\n  the client\u2019s 8xLOx... was also obtained by the attacker),\n  OR the client used it first and the attacker is using\n  the stolen old token. In either case, the session is\n  compromised \u2014 safest action is full revocation.\n\nThe legitimate user will be required to re-authenticate."
+            }
+          ]
+        }
+      ],
+      "tokens": [],
+      "explanation": "An attacker (or a misconfigured retry) attempts to use the already-rotated refresh token. The AS detects this reuse, rejects the request, and revokes the ENTIRE token family \u2014 including the currently valid refresh token issued in step 2. Both parties are logged out. The user must re-authenticate.",
+      "annotations": [
+        "RFC 9700 \u00a72.2.2: If token reuse is detected on a rotated token, the AS SHOULD revoke all tokens in the family to mitigate the impact of token theft.",
+        "This mechanism is what makes rotation effective as a theft detection tool, not just an expiry mechanism.",
+        "The legitimate user should be notified that their session was terminated due to a suspicious event \u2014 this is a security signal worth surfacing.",
+        "Sender-constrained refresh tokens (DPoP or mTLS) prevent this class of attack: even if the attacker has the token value, they cannot use it without the bound private key."
+      ]
+    }
+  ]
+}

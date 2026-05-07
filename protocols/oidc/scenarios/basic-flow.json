@@ -1,0 +1,286 @@
+{
+  "id": "oidc-basic-flow",
+  "title": "OpenID Connect \u2014 Authorization Code Flow",
+  "description": "OpenID Connect 1.0 is an identity layer built on top of OAuth 2.0. Where OAuth 2.0 answers 'what can this client do?', OIDC answers 'who is this user?'. The RP (Relying Party) obtains an ID Token \u2014 a signed JWT containing the user's identity \u2014 alongside the standard OAuth access token. Key OIDC additions: the 'openid' scope, nonce (replay protection), ID Token, at_hash (token binding), and the UserInfo endpoint.",
+  "rfc": "OpenID Connect Core 1.0",
+  "specUrl": "https://openid.net/specs/openid-connect-core-1_0.html",
+  "category": "OIDC",
+  "participants": [
+    { "id": "browser", "label": "Browser / User", "type": "user" },
+    { "id": "rp", "label": "Relying Party (RP)", "type": "client" },
+    { "id": "op", "label": "OpenID Provider (OP)", "type": "idp" }
+  ],
+  "steps": [
+    {
+      "step": 1,
+      "from": "browser",
+      "to": "rp",
+      "label": "GET / (Sign In clicked)",
+      "method": "GET",
+      "url": "https://app.example.com/login",
+      "request_headers": {
+        "Accept": "text/html"
+      },
+      "request_body": null,
+      "response_status": 302,
+      "response_headers": {
+        "Location": "https://op.example.com/authorize?response_type=code&client_id=my-client-id&redirect_uri=https%3A%2F%2Fapp.example.com%2Fcallback&scope=openid+profile+email&state=af0ifjsldkj&nonce=n-0S6_WzA2Mj&code_challenge=E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM&code_challenge_method=S256",
+        "Set-Cookie": "oidc_state=af0ifjsldkj; oidc_nonce_hash=g3sVbBQrpM...; HttpOnly; Secure; SameSite=Lax"
+      },
+      "response_body": null,
+      "artifacts": [
+        {
+          "type": "custom",
+          "raw_input": "scope=openid profile email, nonce=n-0S6_WzA2Mj, code_verifier=dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk",
+          "signing_key_hint": "RP generates nonce + PKCE before redirecting",
+          "final_output": "Authorization request with openid scope, nonce, and code_challenge",
+          "steps": [
+            {
+              "label": "1. scope=openid \u2014 the OIDC signal",
+              "value": "scope = \"openid profile email\"\n\nThe presence of 'openid' in scope is what activates OIDC.\nWithout it this is a plain OAuth 2.0 request and no ID Token\nwill be issued.\n\n  openid   \u2192 required for OIDC; triggers ID Token issuance\n  profile  \u2192 name, picture, locale, updated_at, etc.\n  email    \u2192 email, email_verified\n\nAdditional standard OIDC scopes: address, phone, offline_access"
+            },
+            {
+              "label": "2. nonce \u2014 ID Token replay protection",
+              "value": "nonce = \"n-0S6_WzA2Mj\"  (cryptographically random)\n\nThe nonce is a one-time value the RP generates and stores.\nThe OP MUST include the nonce in the ID Token payload.\nThe RP MUST verify the ID Token nonce matches the stored value.\n\nThis prevents ID Token replay attacks: an attacker who\nintercepts an ID Token cannot replay it at a different RP\nor in a different session because the nonce won't match.\n\nNote: The RP stores a HASH of the nonce in the session\n(not the plain value) to avoid leaking it if the session is\ncompromised. The plain nonce is sent in the authorization\nrequest and verified against the ID Token."
+            },
+            {
+              "label": "3. PKCE (code_challenge) \u2014 code interception protection",
+              "value": "code_verifier  = \"dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk\"\ncode_challenge = BASE64URL(SHA-256(code_verifier))\n               = \"E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM\"\n\nPKCE (RFC 7636) protects the authorization code. Because OIDC\nflows return an ID Token via the code, protecting the code\nalso protects the identity assertion.\n\nOIDC + PKCE is the recommended combination for all client types.\nSee the OAuth 2.0 Authorization Code + PKCE flow for\nfull PKCE derivation details."
+            }
+          ]
+        }
+      ],
+      "tokens": [],
+      "explanation": "The user clicks 'Sign In'. The RP generates a nonce (ID Token replay guard) and PKCE code_verifier, then redirects the browser to the OP's /authorize endpoint with scope=openid to signal an OIDC request.",
+      "annotations": [
+        "OIDC Core \u00a73.1.2.1: scope MUST include 'openid'. Without it, the OP will not issue an ID Token.",
+        "OIDC Core \u00a73.1.2.1: The nonce is OPTIONAL in the Authorization Code flow but recommended \u2014 it mitigates ID Token replay and injection attacks by binding the token to the session.",
+        "The RP stores the nonce (or its hash) and state in an HttpOnly Secure cookie before redirecting.",
+        "response_type=code means the authorization code flow \u2014 no tokens appear in the redirect URL, keeping them out of browser history."
+      ]
+    },
+    {
+      "step": 2,
+      "from": "browser",
+      "to": "op",
+      "label": "GET /authorize (redirect)",
+      "method": "GET",
+      "url": "https://op.example.com/authorize?response_type=code&client_id=my-client-id&redirect_uri=https%3A%2F%2Fapp.example.com%2Fcallback&scope=openid+profile+email&state=af0ifjsldkj&nonce=n-0S6_WzA2Mj&code_challenge=E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM&code_challenge_method=S256",
+      "request_headers": {
+        "Accept": "text/html"
+      },
+      "request_body": null,
+      "response_status": 200,
+      "response_headers": {
+        "Content-Type": "text/html; charset=utf-8"
+      },
+      "response_body": null,
+      "artifacts": [],
+      "tokens": [],
+      "explanation": "The browser follows the redirect to the OP's authorization endpoint. The OP validates the client registration, stores the nonce and code_challenge, and presents a login and consent UI.",
+      "annotations": [
+        "OIDC Core \u00a73.1.2.2: The OP validates client_id, redirect_uri, response_type, and scope. Invalid requests are rejected with an error response.",
+        "The OP stores (client_id, redirect_uri, scope, state, nonce, code_challenge) bound to this authorization session.",
+        "The OP may leverage SSO \u2014 if the user already has a session at the OP, they may be silently authenticated without seeing a login prompt.",
+        "OIDC Discovery (/.well-known/openid-configuration) lets RPs automatically discover the OP's authorization_endpoint, token_endpoint, jwks_uri, and supported scopes."
+      ]
+    },
+    {
+      "step": 3,
+      "from": "browser",
+      "to": "op",
+      "label": "POST /login (credentials + consent)",
+      "method": "POST",
+      "url": "https://op.example.com/login",
+      "request_headers": {
+        "Content-Type": "application/x-www-form-urlencoded",
+        "Cookie": "op_session=xyz789"
+      },
+      "request_body": "username=alice%40example.com&password=hunter2&consent=granted&csrf_token=qrs456",
+      "response_status": 302,
+      "response_headers": {
+        "Location": "https://app.example.com/callback?code=Qcb0Orv1zh30vL1zCC1zm1&state=af0ifjsldkj"
+      },
+      "response_body": null,
+      "artifacts": [],
+      "tokens": [],
+      "explanation": "The user authenticates and grants consent. The OP issues a short-lived authorization code and redirects the browser back to the RP's callback URI with the code and state.",
+      "annotations": [
+        "The authorization code is bound to: client_id, redirect_uri, scope, nonce, code_challenge, and the authenticated user's subject identifier (sub).",
+        "The OP establishes an Authentication Session for the user (auth_time is recorded and will appear in the ID Token).",
+        "OIDC Core \u00a73.1.2.5: The OP includes the state parameter verbatim in the successful authentication response; the RP must verify it matches the stored value.",
+        "The code is short-lived (typically 60\u2013600 seconds) and single-use."
+      ]
+    },
+    {
+      "step": 4,
+      "from": "browser",
+      "to": "rp",
+      "label": "GET /callback?code=...&state=...",
+      "method": "GET",
+      "url": "https://app.example.com/callback?code=Qcb0Orv1zh30vL1zCC1zm1&state=af0ifjsldkj",
+      "request_headers": {
+        "Cookie": "oidc_state=af0ifjsldkj; oidc_nonce_hash=g3sVbBQrpM..."
+      },
+      "request_body": null,
+      "response_status": 200,
+      "response_headers": {
+        "Content-Type": "text/html"
+      },
+      "response_body": null,
+      "artifacts": [],
+      "tokens": [],
+      "explanation": "The browser follows the redirect back to the RP's callback endpoint. The RP validates the state matches the stored value, then exchanges the code for tokens in a direct back-channel request to the OP.",
+      "annotations": [
+        "RP verifies state matches cookie value (CSRF protection) before proceeding.",
+        "RP retrieves the stored nonce (or nonce hash) from the session \u2014 it will be compared against the ID Token nonce in the next step.",
+        "The authorization code alone is not useful to an attacker without the PKCE code_verifier held server-side by the RP."
+      ]
+    },
+    {
+      "step": 5,
+      "from": "rp",
+      "to": "op",
+      "label": "POST /token (code exchange)",
+      "method": "POST",
+      "url": "https://op.example.com/token",
+      "request_headers": {
+        "Content-Type": "application/x-www-form-urlencoded",
+        "Authorization": "Basic bXktY2xpZW50LWlkOm15LWNsaWVudC1zZWNyZXQ="
+      },
+      "request_body": "grant_type=authorization_code&code=Qcb0Orv1zh30vL1zCC1zm1&redirect_uri=https%3A%2F%2Fapp.example.com%2Fcallback&code_verifier=dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk",
+      "response_status": 200,
+      "response_headers": {
+        "Content-Type": "application/json",
+        "Cache-Control": "no-store"
+      },
+      "response_body": {
+        "id_token": "eyJ0eXAiOiJKV1QiLCJhbGciOiJSUzI1NiIsImtpZCI6Im9wLXNpZ24ta2V5LTEifQ.eyJpc3MiOiJodHRwczovL29wLmV4YW1wbGUuY29tIiwic3ViIjoidXNlcl9hbGljZV80ODIiLCJhdWQiOiJteS1jbGllbnQtaWQiLCJleHAiOjE3MDAwMDM2MDAsImlhdCI6MTcwMDAwMDAwMCwiYXV0aF90aW1lIjoxNzAwMDAwMDAwLCJub25jZSI6Im4tMFM2X1d6QTJNaiIsImF0X2hhc2giOiI3N1FtVVB0alBmeld0RjJBbnBLOVJRIiwiZW1haWwiOiJhbGljZUBleGFtcGxlLmNvbSIsImVtYWlsX3ZlcmlmaWVkIjp0cnVlLCJuYW1lIjoiQWxpY2UgRXhhbXBsZSJ9.mock_id_sig",
+        "access_token": "eyJ0eXAiOiJhdCtqd3QiLCJhbGciOiJFUzI1NiIsImtpZCI6Im9wLWFjY2Vzcy1rZXktMSJ9.eyJpc3MiOiJodHRwczovL29wLmV4YW1wbGUuY29tIiwic3ViIjoidXNlcl9hbGljZV80ODIiLCJhdWQiOiJodHRwczovL2FwaS5leGFtcGxlLmNvbSIsImV4cCI6MTcwMDAwMzYwMCwiaWF0IjoxNzAwMDAwMDAwLCJqdGkiOiJiMWMyZDNlNGY1ZzYiLCJjbGllbnRfaWQiOiJteS1jbGllbnQtaWQiLCJzY29wZSI6Im9wZW5pZCBwcm9maWxlIGVtYWlsIn0.mock_at_sig",
+        "token_type": "Bearer",
+        "expires_in": 3600,
+        "refresh_token": "8xLOxBtZp8",
+        "scope": "openid profile email"
+      },
+      "artifacts": [
+        {
+          "type": "jwt",
+          "raw_input": "eyJ0eXAiOiJKV1QiLCJhbGciOiJSUzI1NiIsImtpZCI6Im9wLXNpZ24ta2V5LTEifQ.eyJpc3MiOiJodHRwczovL29wLmV4YW1wbGUuY29tIiwic3ViIjoidXNlcl9hbGljZV80ODIiLCJhdWQiOiJteS1jbGllbnQtaWQiLCJleHAiOjE3MDAwMDM2MDAsImlhdCI6MTcwMDAwMDAwMCwiYXV0aF90aW1lIjoxNzAwMDAwMDAwLCJub25jZSI6Im4tMFM2X1d6QTJNaiIsImF0X2hhc2giOiI3N1FtVVB0alBmeld0RjJBbnBLOVJRIiwiZW1haWwiOiJhbGljZUBleGFtcGxlLmNvbSIsImVtYWlsX3ZlcmlmaWVkIjp0cnVlLCJuYW1lIjoiQWxpY2UgRXhhbXBsZSJ9",
+          "signing_key_hint": "OP's RS256 private key (kid: op-sign-key-1)",
+          "final_output": "mock_id_sig",
+          "steps": [
+            {
+              "label": "1. ID Token header",
+              "value": "{\n  \"typ\": \"JWT\",\n  \"alg\": \"RS256\",\n  \"kid\": \"op-sign-key-1\"\n}\n\nOIDC Core \u00a73.1.3.7: The ID Token MUST be signed by the OP.\nThe default algorithm is RS256; symmetric algorithms (HS256)\nare permitted when the client uses a shared secret.\nThe kid enables the RP to select the correct public key\nfrom the OP's JWKS endpoint."
+            },
+            {
+              "label": "2. ID Token payload \u2014 OIDC required claims",
+              "value": "{\n  \"iss\": \"https://op.example.com\",\n  \"sub\": \"user_alice_482\",\n  \"aud\": \"my-client-id\",\n  \"exp\": 1700003600,\n  \"iat\": 1700000000,\n  \"auth_time\": 1700000000,\n  \"nonce\": \"n-0S6_WzA2Mj\",\n  \"at_hash\": \"77QmUPtjPfzWtF2AnpK9RQ\",\n  \"email\": \"alice@example.com\",\n  \"email_verified\": true,\n  \"name\": \"Alice Example\"\n}\n\nRequired OIDC claims:\n  iss        \u2192 issuer (must match RP's configured OP)\n  sub        \u2192 stable, unique user identifier at this OP\n  aud        \u2192 MUST include the client_id; RP MUST reject if missing\n  exp        \u2192 expiry (ID Tokens are typically short-lived: 60\u2013600s)\n  iat        \u2192 issued-at time\n\nOIDC-specific claims:\n  auth_time  \u2192 when the user last authenticated (useful for max_age)\n  nonce      \u2192 MUST match the nonce sent in step 1 (replay protection)\n  at_hash    \u2192 binds this ID Token to the access_token (see next step)"
+            },
+            {
+              "label": "3. at_hash \u2014 access token binding",
+              "value": "at_hash = BASE64URL(LEFT-HALF(SHA-256(ASCII(access_token))))\n\nSteps:\n  1. ASCII encode the access_token string\n  2. Compute SHA-256 \u2192 32 bytes\n  3. Take the LEFT 16 bytes (first half)\n  4. BASE64URL encode \u2192 at_hash\n\n  access_token = \"eyJ0eXAiOiJhdCtq...\"\n  SHA-256      = 0xEFBA...  (32 bytes)\n  Left 16B     = 0xEFBA...  (16 bytes)\n  at_hash      = \"77QmUPtjPfzWtF2AnpK9RQ\"\n\nOIDC Core \u00a73.1.3.6: at_hash lets the RP verify that the\naccess token in the response belongs to this specific ID Token,\npreventing access token substitution attacks."
+            },
+            {
+              "label": "4. RP ID Token validation steps",
+              "value": "OIDC Core \u00a73.1.3.7 requires the RP to validate:\n\n  1. Fetch OP's public keys from jwks_uri (using kid)\n  2. Verify the JWT signature\n  3. iss MUST exactly match the OP's Issuer Identifier\n  4. aud MUST include client_id; if aud is an array,\n     verify azp is present and is the client_id\n  5. exp MUST be in the future\n  6. iat SHOULD be within acceptable clock skew (~5 min)\n  7. nonce MUST match the stored nonce from step 1\n  8. If at_hash present: verify against the access_token\n  9. auth_time + max_age: if max_age was requested,\n     auth_time MUST be within max_age seconds\n\nIf any check fails: REJECT the ID Token \u2014 do not establish session."
+            }
+          ]
+        }
+      ],
+      "tokens": [
+        {
+          "name": "ID Token",
+          "typ": "JWT",
+          "raw": "eyJ0eXAiOiJKV1QiLCJhbGciOiJSUzI1NiIsImtpZCI6Im9wLXNpZ24ta2V5LTEifQ.eyJpc3MiOiJodHRwczovL29wLmV4YW1wbGUuY29tIiwic3ViIjoidXNlcl9hbGljZV80ODIiLCJhdWQiOiJteS1jbGllbnQtaWQiLCJleHAiOjE3MDAwMDM2MDAsImlhdCI6MTcwMDAwMDAwMCwiYXV0aF90aW1lIjoxNzAwMDAwMDAwLCJub25jZSI6Im4tMFM2X1d6QTJNaiIsImF0X2hhc2giOiI3N1FtVVB0alBmeld0RjJBbnBLOVJRIiwiZW1haWwiOiJhbGljZUBleGFtcGxlLmNvbSIsImVtYWlsX3ZlcmlmaWVkIjp0cnVlLCJuYW1lIjoiQWxpY2UgRXhhbXBsZSJ9.mock_id_sig",
+          "header": {
+            "typ": "JWT",
+            "alg": "RS256",
+            "kid": "op-sign-key-1"
+          },
+          "payload": {
+            "iss": "https://op.example.com",
+            "sub": "user_alice_482",
+            "aud": "my-client-id",
+            "exp": 1700003600,
+            "iat": 1700000000,
+            "auth_time": 1700000000,
+            "nonce": "n-0S6_WzA2Mj",
+            "at_hash": "77QmUPtjPfzWtF2AnpK9RQ",
+            "email": "alice@example.com",
+            "email_verified": true,
+            "name": "Alice Example"
+          },
+          "signature_b64": "mock_id_sig"
+        },
+        {
+          "name": "Access Token",
+          "typ": "at+jwt",
+          "raw": "eyJ0eXAiOiJhdCtqd3QiLCJhbGciOiJFUzI1NiIsImtpZCI6Im9wLWFjY2Vzcy1rZXktMSJ9.eyJpc3MiOiJodHRwczovL29wLmV4YW1wbGUuY29tIiwic3ViIjoidXNlcl9hbGljZV80ODIiLCJhdWQiOiJodHRwczovL2FwaS5leGFtcGxlLmNvbSIsImV4cCI6MTcwMDAwMzYwMCwiaWF0IjoxNzAwMDAwMDAwLCJqdGkiOiJiMWMyZDNlNGY1ZzYiLCJjbGllbnRfaWQiOiJteS1jbGllbnQtaWQiLCJzY29wZSI6Im9wZW5pZCBwcm9maWxlIGVtYWlsIn0.mock_at_sig",
+          "header": {
+            "typ": "at+jwt",
+            "alg": "ES256",
+            "kid": "op-access-key-1"
+          },
+          "payload": {
+            "iss": "https://op.example.com",
+            "sub": "user_alice_482",
+            "aud": "https://api.example.com",
+            "exp": 1700003600,
+            "iat": 1700000000,
+            "jti": "b1c2d3e4f5g6",
+            "client_id": "my-client-id",
+            "scope": "openid profile email"
+          },
+          "signature_b64": "mock_at_sig"
+        }
+      ],
+      "explanation": "The RP exchanges the authorization code for tokens. The OP returns both an ID Token (identity assertion) and an access token. The RP must fully validate the ID Token \u2014 checking signature, issuer, audience, expiry, nonce, and at_hash \u2014 before establishing a user session.",
+      "annotations": [
+        "OIDC Core \u00a73.1.3.7: ID Token validation is mandatory. An RP that skips validation is trivially bypassable with a forged ID Token.",
+        "The ID Token audience (aud=my-client-id) MUST match the RP's client_id. Accepting tokens with a different aud enables audience-confusion attacks.",
+        "The access token's aud (https://api.example.com) is the resource server, NOT the RP \u2014 the RP should use the access token only to call APIs, not as proof of identity.",
+        "OIDC Core \u00a75.3: Profile, email, address, and phone claims can come from the ID Token or from the UserInfo endpoint (next step). UserInfo is authoritative for current values."
+      ]
+    },
+    {
+      "step": 6,
+      "from": "rp",
+      "to": "op",
+      "label": "GET /userinfo",
+      "method": "GET",
+      "url": "https://op.example.com/userinfo",
+      "request_headers": {
+        "Authorization": "Bearer eyJ0eXAiOiJhdCtqd3QiLCJhbGciOiJFUzI1NiIsImtpZCI6Im9wLWFjY2Vzcy1rZXktMSJ9.eyJpc3MiOiJodHRwczovL29wLmV4YW1wbGUuY29tIiwic3ViIjoidXNlcl9hbGljZV80ODIiLCJhdWQiOiJodHRwczovL2FwaS5leGFtcGxlLmNvbSIsImV4cCI6MTcwMDAwMzYwMCwiaWF0IjoxNzAwMDAwMDAwLCJqdGkiOiJiMWMyZDNlNGY1ZzYiLCJjbGllbnRfaWQiOiJteS1jbGllbnQtaWQiLCJzY29wZSI6Im9wZW5pZCBwcm9maWxlIGVtYWlsIn0.mock_at_sig",
+        "Accept": "application/json"
+      },
+      "request_body": null,
+      "response_status": 200,
+      "response_headers": {
+        "Content-Type": "application/json",
+        "Cache-Control": "no-store"
+      },
+      "response_body": {
+        "sub": "user_alice_482",
+        "name": "Alice Example",
+        "given_name": "Alice",
+        "family_name": "Example",
+        "picture": "https://op.example.com/photos/alice.jpg",
+        "email": "alice@example.com",
+        "email_verified": true,
+        "locale": "en-US",
+        "updated_at": 1699990000
+      },
+      "artifacts": [],
+      "tokens": [],
+      "explanation": "The RP calls the UserInfo endpoint with the access token to retrieve up-to-date profile claims about the authenticated user. The OP validates the access token and returns the claims permitted by the granted scopes.",
+      "annotations": [
+        "OIDC Core \u00a75.3: The UserInfo endpoint returns claims corresponding to the scopes granted (profile, email). The RP MUST verify the sub in the UserInfo response matches the sub in the ID Token.",
+        "UserInfo is the authoritative source for current user attributes \u2014 the user may have updated their profile since the ID Token was issued.",
+        "The sub claim is the stable, unique identifier for the user at this OP. RPs MUST use sub (not email) as the primary key for user records \u2014 email addresses can change.",
+        "The access token (not the ID Token) is used to call UserInfo. The ID Token is an identity assertion for the RP; the access token is the credential for calling OP/RS APIs.",
+        "OIDC Core \u00a75.3.4: The RP MUST verify that the sub Claim in the UserInfo Response is identical to the sub Claim in the ID Token. If not, discard the response."
+      ]
+    }
+  ]
+}
