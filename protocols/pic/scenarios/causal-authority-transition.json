@@ -1,0 +1,366 @@
+{
+  "id": "pic-causal-authority-transition",
+  "title": "PIC — Causal Authority Transition",
+  "description": "The core PIC protocol. An executor E_i holding PCA_i wants to delegate restricted authority to the next executor E_{i+1}. It cannot simply forward PCA_i — PCA is bound to E_i and non-transferable. Instead, E_i requests a freshness challenge (PCC) from the Trust Plane (CAT), constructs a Proof of Continuity (PoC) demonstrating both authority over the predecessor PCA and possession of an attested executor identity, and the CAT mints a new PCA_{i+1} that strictly restricts ops (ops_{i+1} ⊆ ops_i) and is bound to E_{i+1}. p_0 is preserved verbatim. This single mechanism repeats at every hop in a PIC transaction, building the causal chain. References pic-spec.md §4.3 (CAT verification), §5.4 (request binding).",
+  "rfc": "draft-pic-spec-00",
+  "specUrl": "https://github.com/pic-protocol/pic-spec",
+  "category": "PIC",
+  "participants": [
+    {
+      "id": "ei",
+      "label": "Executor E_i",
+      "type": "client"
+    },
+    {
+      "id": "cat",
+      "label": "CAT (Trust Plane)",
+      "type": "kms"
+    },
+    {
+      "id": "ei1",
+      "label": "Executor E_{i+1}",
+      "type": "server"
+    }
+  ],
+  "steps": [
+    {
+      "step": 1,
+      "from": "ei",
+      "to": "cat",
+      "label": "GET /pcc (request challenge)",
+      "method": "GET",
+      "url": "https://cat.example.com/pcc",
+      "request_headers": {
+        "Host": "cat.example.com",
+        "Accept": "application/pcc+json",
+        "X-PIC-Predecessor-Hop": "5",
+        "X-PIC-Successor-Executor": "spiffe://example.com/svc/order-processor"
+      },
+      "request_body": null,
+      "response_status": 200,
+      "response_headers": {
+        "Content-Type": "application/pcc+json"
+      },
+      "response_body": null,
+      "artifacts": [],
+      "tokens": [],
+      "explanation": "E_i is about to delegate to E_{i+1}. Before signing a PoC, it asks the CAT for a fresh challenge (PCC). The challenge prevents replay: a PoC bound to PCC_{i+1} cannot be reused at any other hop or against any other CAT. E_i declares (informationally) the predecessor hop number and the intended successor executor — these will be re-verified inside the PoC itself.",
+      "annotations": [
+        "The challenge is the freshness mechanism. Without it, a captured PoC could be replayed by an adversary who later compromised E_i's key.",
+        "PCC issuance is cheap (random nonce + bookkeeping). It is the validation work in step 3 that is load-bearing.",
+        "Some embedded-CAT deployments skip the round-trip and use a deterministic challenge derived from a shared monotonic counter. The security property (one-time-use) must still hold."
+      ]
+    },
+    {
+      "step": 2,
+      "from": "cat",
+      "to": "ei",
+      "label": "PCC_{i+1} (challenge)",
+      "method": "GET",
+      "url": "https://cat.example.com/pcc",
+      "request_headers": {},
+      "request_body": null,
+      "response_status": 200,
+      "response_headers": {
+        "Content-Type": "application/pcc+json"
+      },
+      "response_body": {
+        "pcc": {
+          "challenge": "0x9a7e2f1b8c4d6a3e5f0192abcd76ef83",
+          "context": {
+            "cat_kid": "cat-kid-2026-01",
+            "predecessor_hop": 5,
+            "valid_until": 1770000060
+          }
+        }
+      },
+      "artifacts": [
+        {
+          "type": "custom",
+          "raw_input": "Random source: CSPRNG (256 bits)\nTransaction ID: txn-7d9a2e\nSuccessor target: spiffe://example.com/svc/order-processor",
+          "signing_key_hint": "No signing — PCC is a one-time-use nonce, not a credential.",
+          "final_output": "challenge = 0x9a7e2f1b8c4d6a3e5f0192abcd76ef83\nvalid_until = iat + 60s",
+          "steps": [
+            {
+              "label": "1. Generate freshness nonce",
+              "value": "challenge = CSPRNG(256 bits)\n         = 0x9a7e2f1b8c4d6a3e5f0192abcd76ef83\n\nThe CAT records (challenge, predecessor_hop,\nsuccessor_target, valid_until) in its short-lived\nchallenge store. When the matching PoC arrives, the\nCAT MUST find this entry, MUST mark it consumed, and\nMUST reject any second use.\n\n60-second window is conservative; some deployments\nuse 5-15 seconds for high-throughput services."
+            },
+            {
+              "label": "2. Why a server-issued challenge (not just timestamp)",
+              "value": "A naive design would let E_i pick its own jti+iat\nand let CAT validate freshness from a clock.\nProblems:\n  ✗ Clock skew tolerance widens replay window\n  ✗ Adversary with key + recent jti corpus can replay\n  ✗ No causal binding to specific successor\n\nServer-issued PCC fixes all three:\n  ✓ Freshness tied to CAT's own state, not clocks\n  ✓ One-shot consumption — no re-use ever\n  ✓ Bound to (predecessor_hop, successor_target),\n    so a PoC for one hop cannot be replayed at another"
+            }
+          ]
+        }
+      ],
+      "tokens": [],
+      "is_response": true,
+      "explanation": "The CAT issues PCC_{i+1} — a 256-bit random nonce paired with context (the CAT's own kid, the predecessor hop number, a short validity window). The challenge is bound to E_i's intended successor, so a PoC built around it can only be used to mint PCA for that specific transition.",
+      "annotations": [
+        "PCC is not a credential. It carries no authority on its own and is not signed.",
+        "The CAT MUST cache (challenge, consumed?) until valid_until expires. Garbage-collected after that.",
+        "If the CAT is sharded/HA, the challenge store needs cross-shard consistency — typically a fast KV store with short TTL keys."
+      ]
+    },
+    {
+      "step": 3,
+      "from": "ei",
+      "to": "cat",
+      "label": "POST /poc (submit PoC_{i+1})",
+      "method": "POST",
+      "url": "https://cat.example.com/poc",
+      "request_headers": {
+        "Content-Type": "application/poc+cose",
+        "Host": "cat.example.com"
+      },
+      "request_body": "eyJhbGciOiJFZERTQSIsImtpZCI6InNwaWZmZTovL2V4YW1wbGUuY29tL3N2Yy9jaGVja291dCNrZXktMSIsImNoYWxsZW5nZSI6IjB4OWE3ZTJmMWI4YzRkNmEzZTVmMDE5MmFiY2Q3NmVmODMifQ.eyJwcmVkZWNlc3NvciI6IlBDQV9pIChmdWxsKSIsInN1Y2Nlc3NvciI6eyJvcHMiOlsicmVhZDpvcmRlcnMvKiJdLCJleGVjdXRvciI6eyJiaW5kaW5nIjoic3BpZmZlOi8vZXhhbXBsZS5jb20vc3ZjL29yZGVyLXByb2Nlc3NvciJ9LCJjb25zdHJhaW50cyI6eyJ0ZW1wb3JhbCI6eyJleHAiOjE3NzAwMDAxMjB9fX0sImF0dGVzdGF0aW9ucyI6W3sidHlwZSI6InNwaWZmZV9zdmlkIiwic3BpZmZlX2lkIjoic3BpZmZlOi8vZXhhbXBsZS5jb20vc3ZjL2NoZWNrb3V0IiwicG9wIjoiWFlaIn1dfQ.POC_EI_SIG",
+      "response_status": 200,
+      "response_headers": {
+        "Content-Type": "application/pca+cose"
+      },
+      "response_body": null,
+      "artifacts": [
+        {
+          "type": "custom",
+          "raw_input": "Inputs to the PoC construction:\n  predecessor PCA_i = (hop=5, p_0=alice, ops=(read:orders/*, read:catalog/*, write:orders/*))\n  successor proposal:\n    ops_{i+1} = (read:orders/*)            ← strict subset of ops_i\n    executor = spiffe://example.com/svc/order-processor\n    constraints.exp = predecessor.exp − Δ   ← never extend\n  attestations = [SPIFFE SVID for E_i]\n  challenge = 0x9a7e2f1b8c4d6a3e5f0192abcd76ef83  ← from PCC",
+          "signing_key_hint": "E_i's executor private key (paired with the SPIFFE SVID public key in the attestation)",
+          "final_output": "PoC_{i+1} = COSE_Sign1(\n  protected_header = {alg, kid, challenge},\n  payload          = {predecessor, successor, attestations[]},\n  signature        = Ed25519(E_i_private, header || payload)\n)",
+          "steps": [
+            {
+              "label": "1. Protected header — bind to PCC",
+              "value": "{\n  \"alg\": \"EdDSA\",\n  \"kid\": \"spiffe://example.com/svc/checkout#key-1\",\n  \"challenge\": \"0x9a7e2f1b8c4d6a3e5f0192abcd76ef83\"\n}\n\nchallenge in the protected header binds this PoC to the\nspecific PCC issued in step 2. If the CAT does not find\nthis exact challenge in its one-time-use store, validation\nfails — replay is impossible.\n\nkid is the executor's public key identifier, resolvable\nvia E_i's attestation. This key is NOT a CAT-issued\ncredential — it is E_i's own identity key."
+            },
+            {
+              "label": "2. Payload — predecessor + successor proposal",
+              "value": "{\n  \"predecessor\": <full PCA_i>,\n  \"successor\": {\n    \"ops\": [\"read:orders/*\"],\n    \"executor\": {\n      \"binding\": \"spiffe://example.com/svc/order-processor\"\n    },\n    \"constraints\": {\n      \"temporal\": { \"exp\": 1770000120 }\n    }\n  },\n  \"attestations\": [\n    {\n      \"type\": \"spiffe_svid\",\n      \"svid\": \"<X.509 SVID for E_i>\",\n      \"pop\": \"<PoP signature — see next breakdown>\"\n    }\n  ]\n}\n\nThe full PCA_i is included so the CAT can verify the\nchain locally without database lookups. ops_{i+1} =\n(read:orders/*) is a strict subset of ops_i — E_i has\nVOLUNTARILY narrowed authority before calling a service\nthat only needs read access.\n\nThis is where principle of least privilege gets\nenforced cryptographically rather than by convention."
+            },
+            {
+              "label": "3. Per-attestation PoP — context binding",
+              "value": "Each attestation carries its own PoP signature,\nwhich proves possession of the attestation's key AND\nbinds the attestation to THIS specific PoC's context.\n\nPoP_input = SHA-256(protected_header || payload)\nPoP       = Sign(attestation_private_key, PoP_input)\n\nWhy two signatures (PoC outer + PoP per attestation)?\n\nWithout the per-attestation PoP, a captured SVID +\nleaked PoC body could be re-used by stitching together\na new PoC that re-binds the same SVID to a different\ncontext. The PoP forces every attestation usage to be\ncryptographically tied to the hash of the PoC payload\nit appears in — no rebinding possible.\n\nThis is the same property DPoP achieves for OAuth\nsender-constraint, applied per-attestation here."
+            }
+          ]
+        }
+      ],
+      "tokens": [
+        {
+          "name": "PoC_{i+1} (Proof of Continuity)",
+          "typ": "poc+cose",
+          "raw": "eyJhbGciOiJFZERTQSIsImtpZCI6InNwaWZmZTovL2V4YW1wbGUuY29tL3N2Yy9jaGVja291dCNrZXktMSIsImNoYWxsZW5nZSI6IjB4OWE3ZTJmMWI4YzRkNmEzZTVmMDE5MmFiY2Q3NmVmODMifQ.eyJwcmVkZWNlc3NvciI6IlBDQV9pIChmdWxsKSIsInN1Y2Nlc3NvciI6eyJvcHMiOlsicmVhZDpvcmRlcnMvKiJdLCJleGVjdXRvciI6eyJiaW5kaW5nIjoic3BpZmZlOi8vZXhhbXBsZS5jb20vc3ZjL29yZGVyLXByb2Nlc3NvciJ9LCJjb25zdHJhaW50cyI6eyJ0ZW1wb3JhbCI6eyJleHAiOjE3NzAwMDAxMjB9fX0sImF0dGVzdGF0aW9ucyI6W3sidHlwZSI6InNwaWZmZV9zdmlkIiwic3BpZmZlX2lkIjoic3BpZmZlOi8vZXhhbXBsZS5jb20vc3ZjL2NoZWNrb3V0IiwicG9wIjoiWFlaIn1dfQ.POC_EI_SIG",
+          "header": {
+            "alg": "EdDSA",
+            "kid": "spiffe://example.com/svc/checkout#key-1",
+            "challenge": "0x9a7e2f1b8c4d6a3e5f0192abcd76ef83"
+          },
+          "payload": {
+            "predecessor": {
+              "hop": 5,
+              "p_0": "alice@example.com",
+              "ops": [
+                "read:orders/*",
+                "read:catalog/*",
+                "write:orders/*"
+              ],
+              "executor": {
+                "binding": "spiffe://example.com/svc/checkout"
+              }
+            },
+            "successor": {
+              "ops": [
+                "read:orders/*"
+              ],
+              "executor": {
+                "binding": "spiffe://example.com/svc/order-processor"
+              },
+              "constraints": {
+                "temporal": {
+                  "exp": 1770000120
+                }
+              }
+            },
+            "attestations": [
+              {
+                "type": "spiffe_svid",
+                "spiffe_id": "spiffe://example.com/svc/checkout",
+                "pop": "POP_SIG_OVER_HASH_HEADER_PAYLOAD"
+              }
+            ]
+          },
+          "signature_b64": "POC_EI_SIG"
+        }
+      ],
+      "explanation": "E_i constructs PoC_{i+1} — a COSE_Sign1 envelope carrying the predecessor PCA_i in full, a strictly-narrower successor proposal, and an executor attestation with its own PoP. The challenge from PCC_{i+1} appears in the protected header, binding this PoC to that specific issuance moment. The whole envelope is signed with E_i's executor private key.",
+      "annotations": [
+        "The successor proposal is a PROPOSAL — the CAT may still reject it (out-of-policy ops, expired predecessor, attestation revoked, failed monotonicity check).",
+        "Including the full predecessor PCA in the payload means the CAT can validate without state lookups. This is how PIC scales horizontally.",
+        "Multiple attestations are allowed (e.g., SPIFFE SVID + TEE quote + VP) when the executor needs to demonstrate multiple identity facets. Each attestation carries its own PoP."
+      ]
+    },
+    {
+      "step": 4,
+      "from": "cat",
+      "to": "ei",
+      "label": "PCA_{i+1} (signed)",
+      "method": "POST",
+      "url": "https://cat.example.com/poc",
+      "request_headers": {},
+      "request_body": null,
+      "response_status": 200,
+      "response_headers": {
+        "Content-Type": "application/pca+cose"
+      },
+      "response_body": {
+        "pca": "eyJhbGciOiJFZERTQSIsImtpZCI6ImNhdC1raWQtMjAyNi0wMSIsInR5cCI6InBjYStjb3NlIn0.eyJob3AiOjYsInBfMCI6ImFsaWNlQGV4YW1wbGUuY29tIiwib3BzIjpbInJlYWQ6b3JkZXJzLyoiXSwiZXhlY3V0b3IiOnsiYmluZGluZyI6InNwaWZmZTovL2V4YW1wbGUuY29tL3N2Yy9vcmRlci1wcm9jZXNzb3IifSwicHJvdmVuYW5jZSI6eyJjYXQiOnsia2lkIjoiY2F0LWtpZC0yMDI2LTAxIiwic2lnIjoiUFJFREVDRVNTT1JfQ0FUX1NJRyJ9LCJleGVjdXRvciI6eyJraWQiOiJzcGlmZmU6Ly9leGFtcGxlLmNvbS9zdmMvY2hlY2tvdXQja2V5LTEiLCJzaWciOiJQT0NfRUlfU0lHIn19LCJjb25zdHJhaW50cyI6eyJ0ZW1wb3JhbCI6eyJpYXQiOjE3NzAwMDAwNjUsImV4cCI6MTc3MDAwMDEyMH19fQ.PCA_NEW_CAT_SIG"
+      },
+      "artifacts": [
+        {
+          "type": "custom",
+          "raw_input": "CAT validation pipeline before signing PCA_{i+1}\n\nPoC from step 3:\n  challenge = 0x9a7e2f1b8c4d6a3e5f0192abcd76ef83\n  predecessor.ops = (read:orders/*, read:catalog/*, write:orders/*)\n  successor.ops   = (read:orders/*)\n  predecessor.p_0 = alice@example.com\n  attestation     = SPIFFE SVID for checkout\n\nCAT trust anchors:\n  Fed Bridge key (for PCA_0 lineage) ✓\n  SPIRE trust bundle (for SVID validation) ✓\n  PCC store (one-time-use challenges) ✓",
+          "signing_key_hint": "CAT's signing key (kid: cat-kid-2026-01) — used AFTER all checks pass",
+          "final_output": "All 6 checks PASS → CAT signs PCA_{i+1}",
+          "steps": [
+            {
+              "label": "1. Verify PoC outer signature",
+              "value": "Extract kid from protected header.\nResolve public key via the SVID in the attestations\narray (SVID's X.509 certificate carries the public key).\n\nverify_signature(\n  PoC_payload || PoC_protected_header,\n  PoC_signature,\n  SVID.public_key\n) → MUST be valid\n\nFAIL → reject. The signer is not who they claim."
+            },
+            {
+              "label": "2. Verify each attestation + PoP",
+              "value": "For each attestation in attestations[]:\n\n  a) Validate the attestation against its issuer:\n     SPIFFE SVID → SPIRE trust bundle\n     TEE quote   → vendor attestation service\n     X.509 cert  → CA chain\n     VP          → DID resolution + VC issuer keys\n\n  b) Verify per-attestation PoP:\n     PoP_input = SHA-256(protected_header || payload)\n     verify_signature(\n       PoP_input,\n       attestation.pop,\n       attestation.public_key\n     ) → MUST be valid\n\nThis prevents rebinding a captured SVID into a different\nPoC. Each attestation is cryptographically glued to\nexactly this PoC's payload hash (pic-spec.md §4.3)."
+            },
+            {
+              "label": "3. Verify predecessor PCA_i + consume challenge",
+              "value": "Verify PCA_i signature against known trust anchor:\n  PCA_i.kid → Fed Bridge or prior CAT → public key\n  verify_signature(PCA_i_payload, PCA_i_sig, pubkey) ✓\n\nConsume PCC challenge (atomic):\n  lookup challenge 0x9a7e2f1b8c4d6a3e5f0192abcd76ef83\n    → EXISTS ✓  NOT consumed ✓  NOT expired ✓\n    → matches (predecessor_hop=5, successor_target) ✓\n  MARK consumed = true"
+            },
+            {
+              "label": "4. Enforce monotonicity (the core invariant)",
+              "value": "ops_{i+1}     = [\"read:orders/*\"]\nops_i (pred)  = [\"read:orders/*\", \"read:catalog/*\",\n                 \"write:orders/*\"]\n\nCheck:  ops_{i+1} ⊆ ops_i\n\nFor each op in ops_{i+1}:\n  read:orders/* ∈ ops_i? → YES ✓\n\n→ subset proven\n\nConstraints:\n  successor.exp = 1770000120\n  predecessor.exp = 1770003605\n  1770000120 ≤ 1770003605 ✓\n\nOrigin immutability:\n  PCA_{i+1}.p_0 will carry alice@example.com\n  verbatim — the CAT cannot be told to change it.\n\nAll invariants hold → mint PCA_{i+1}."
+            }
+          ]
+        }
+      ],
+      "tokens": [
+        {
+          "name": "PCA_{i+1} (newly minted)",
+          "typ": "pca+cose",
+          "raw": "eyJhbGciOiJFZERTQSIsImtpZCI6ImNhdC1raWQtMjAyNi0wMSIsInR5cCI6InBjYStjb3NlIn0.eyJob3AiOjYsInBfMCI6ImFsaWNlQGV4YW1wbGUuY29tIiwib3BzIjpbInJlYWQ6b3JkZXJzLyoiXSwiZXhlY3V0b3IiOnsiYmluZGluZyI6InNwaWZmZTovL2V4YW1wbGUuY29tL3N2Yy9vcmRlci1wcm9jZXNzb3IifSwicHJvdmVuYW5jZSI6eyJjYXQiOnsia2lkIjoiY2F0LWtpZC0yMDI2LTAxIiwic2lnIjoiUFJFREVDRVNTT1JfQ0FUX1NJRyJ9LCJleGVjdXRvciI6eyJraWQiOiJzcGlmZmU6Ly9leGFtcGxlLmNvbS9zdmMvY2hlY2tvdXQja2V5LTEiLCJzaWciOiJQT0NfRUlfU0lHIn19LCJjb25zdHJhaW50cyI6eyJ0ZW1wb3JhbCI6eyJpYXQiOjE3NzAwMDAwNjUsImV4cCI6MTc3MDAwMDEyMH19fQ.PCA_NEW_CAT_SIG",
+          "header": {
+            "alg": "EdDSA",
+            "kid": "cat-kid-2026-01",
+            "typ": "pca+cose"
+          },
+          "payload": {
+            "hop": 6,
+            "p_0": "alice@example.com",
+            "ops": [
+              "read:orders/*"
+            ],
+            "executor": {
+              "binding": "spiffe://example.com/svc/order-processor"
+            },
+            "provenance": {
+              "cat": {
+                "kid": "cat-kid-2026-01",
+                "sig": "PREDECESSOR_CAT_SIG"
+              },
+              "executor": {
+                "kid": "spiffe://example.com/svc/checkout#key-1",
+                "sig": "POC_EI_SIG"
+              }
+            },
+            "constraints": {
+              "temporal": {
+                "iat": 1770000065,
+                "exp": 1770000120
+              }
+            }
+          },
+          "signature_b64": "PCA_NEW_CAT_SIG"
+        }
+      ],
+      "is_response": true,
+      "explanation": "After all 6 checks pass, the CAT mints PCA_{i+1}: hop incremented to 6, p_0 carried forward verbatim as alice@example.com, ops strictly narrower at (read:orders/*), executor bound to E_{i+1}, and provenance back-referencing both the predecessor CAT signature and E_i's PoC signature. The new exp (1770000120) is much shorter than the predecessor's.",
+      "annotations": [
+        "provenance.executor.sig captures that E_i (specifically) authorized this transition — audit can verify who signed what years later.",
+        "PCA_{i+1}.executor.binding is the NEXT executor (E_{i+1}); the attestations in PoC were E_i's. This handoff is the binding chain.",
+        "CAT key rotation: overlap windows, sign-with-old/verify-with-both during cutover. The kid in the header is what downstream verifiers resolve."
+      ]
+    },
+    {
+      "step": 5,
+      "from": "ei",
+      "to": "ei1",
+      "label": "Forward request + PCA_{i+1}",
+      "method": "POST",
+      "url": "https://order-processor.example.com/v1/orders",
+      "request_headers": {
+        "Content-Type": "application/json",
+        "X-PIC-PCA": "eyJhbGciOiJFZERTQSIs...PCA_NEW_CAT_SIG",
+        "X-PIC-Request-Sig": "EI_REQUEST_BODY_SIG",
+        "Host": "order-processor.example.com"
+      },
+      "request_body": {
+        "order_id": "ord-7d9a2e",
+        "operation": "fetch_status"
+      },
+      "response_status": 200,
+      "response_headers": {
+        "Content-Type": "application/json"
+      },
+      "response_body": null,
+      "artifacts": [
+        {
+          "type": "custom",
+          "raw_input": "request_body || X-PIC-PCA header value",
+          "signing_key_hint": "E_i's executor private key (same key kid as in PoC_{i+1})",
+          "final_output": "X-PIC-Request-Sig = Ed25519(E_i_private, request_body || PCA_{i+1})",
+          "steps": [
+            {
+              "label": "1. Why also sign the request body (pic-spec.md §5.4)",
+              "value": "PCA_{i+1} is bound to E_{i+1} (the addressee).\nIt does NOT prove the attached request body was sent\nby E_i. An on-path adversary could swap the body while\nkeeping PCA_{i+1} intact.\n\nE_i signs (request_body || PCA_{i+1}) with the SAME key\nit used for PoC_{i+1}. E_{i+1} verifies using the public\nkey referenced in PCA_{i+1}.provenance.executor.kid.\n\nThis closes the loop: body is cryptographically bound\nto the specific E_i that created this transition.\n\nPrevents:\n  ✗ Body tampering on transit\n  ✗ Replay against a different executor\n  ✗ Substitution of a stale or forged request"
+            }
+          ]
+        }
+      ],
+      "tokens": [],
+      "explanation": "E_i forwards the actual business request to E_{i+1}, attaching PCA_{i+1} and a request-body signature using the same key it signed PoC with. Without the request signature, PCA would be a bearer token bound only to recipient identity — PIC also binds the request body itself to E_i's authoring (pic-spec.md §5.4).",
+      "annotations": [
+        "The transport is HTTP here for familiarity. PIC is transport-agnostic — gRPC, queue messages, MQTT all work as long as PCA + request signature can travel together.",
+        "If E_i needs to fan out the same operation to multiple downstream services, it MUST get a fresh PCA per recipient (each bound to that recipient's executor identity).",
+        "X-PIC-PCA and X-PIC-Request-Sig are illustrative header names. Real deployments may use a single structured envelope or a sidecar metadata channel."
+      ]
+    },
+    {
+      "step": 6,
+      "from": "ei1",
+      "to": "ei",
+      "label": "200 OK (restricted ops enforced)",
+      "method": "POST",
+      "url": "https://order-processor.example.com/v1/orders",
+      "request_headers": {},
+      "request_body": null,
+      "response_status": 200,
+      "response_headers": {
+        "Content-Type": "application/json"
+      },
+      "response_body": {
+        "order_id": "ord-7d9a2e",
+        "status": "shipped",
+        "_pic_audit": {
+          "p_0": "alice@example.com",
+          "executed_under_ops": [
+            "read:orders/*"
+          ],
+          "hop": 6,
+          "executor": "spiffe://example.com/svc/order-processor"
+        }
+      },
+      "artifacts": [],
+      "tokens": [],
+      "is_response": true,
+      "explanation": "E_{i+1} validates PCA_{i+1} (signature against CAT's public key, executor.binding matches its own identity, ops and p_0 legible) and the request signature (against E_i's key from provenance). All checks pass; it executes the read under ops_{i+1} = (read:orders/*). Even if E_{i+1} were compromised and tried to write, ops does not include write — any downstream call attempting write would fail at the next CAT.",
+      "annotations": [
+        "The audit envelope shows what PIC makes verifiable: this read happened under alice's authority, with exactly ops (read:orders/*), at hop 6.",
+        "If E_{i+1} needs to call E_{i+2}, it repeats this entire flow as the new E_i. The chain extends indefinitely; security argument is identical at every hop.",
+        "Confused deputy is not formulable: even if a tenant tricked E_{i+1} into making an unintended call, that call carries alice's ops only — not E_{i+1}'s ambient privileges, because there are none."
+      ]
+    }
+  ]
+}

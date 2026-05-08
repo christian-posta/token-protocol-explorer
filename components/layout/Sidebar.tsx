@@ -94,6 +94,16 @@ const NAV: NavSection[] = [
     ],
   },
   {
+    title: "PIC",
+    color: "text-pink-400",
+    items: [
+      { label: "Federation Bridge Entry", href: "/pic/federation-entry" },
+      { label: "Causal Authority Transition", href: "/pic/causal-authority-transition" },
+      { label: "Cross-Domain Federation", href: "/pic/cross-domain" },
+      { label: "AI Agent Orchestration", href: "/pic/ai-agent-orchestration" },
+    ],
+  },
+  {
     title: "ID-JAG (Xaa)",
     color: "text-sky-400",
     items: [

@@ -1,0 +1,333 @@
+{
+  "id": "pic-ai-agent-orchestration",
+  "title": "PIC — AI Agent Orchestration",
+  "description": "An AI agent acting on behalf of a human user calls an external tool. In traditional agent designs, the agent holds its own credentials and the tool sees the agent as the actor — the classic confused deputy setup, where prompt injection or a malicious tool call can use the agent's ambient privileges. PIC inverts this: the agent is an EXECUTOR within Alice's transaction, not an independent actor. PCA_0 carries Alice as p_0 and her authority set as ops_0. When the agent calls a tool, it submits a PoC for a STRICTLY narrower scope (only what this specific tool call needs); the CAT mints PCA_1 bound to the tool. The tool executes under Alice's authority, restricted to the agent-requested subset. The agent has no privileges of its own — confused deputy is structurally impossible. References pic-spec.md §6.7 and §7.2.",
+  "rfc": "draft-pic-spec-00",
+  "specUrl": "https://github.com/pic-protocol/pic-spec",
+  "category": "PIC",
+  "participants": [
+    {
+      "id": "alice",
+      "label": "Alice (User)",
+      "type": "user"
+    },
+    {
+      "id": "fed",
+      "label": "Federation Bridge",
+      "type": "idp"
+    },
+    {
+      "id": "agent",
+      "label": "AI Agent",
+      "type": "client"
+    },
+    {
+      "id": "cat",
+      "label": "CAT (Trust Plane)",
+      "type": "kms"
+    },
+    {
+      "id": "tool",
+      "label": "Search Tool",
+      "type": "server"
+    }
+  ],
+  "steps": [
+    {
+      "step": 1,
+      "from": "alice",
+      "to": "fed",
+      "label": "Authenticate → PCA_0",
+      "method": "POST",
+      "url": "https://fed.example.com/pic/bootstrap",
+      "request_headers": {
+        "Content-Type": "application/json",
+        "Authorization": "Bearer <alice's OIDC ID Token>"
+      },
+      "request_body": {
+        "credential_type": "oidc_id_token",
+        "credential": "<id_token>",
+        "executor_attestation": {
+          "type": "model_identity",
+          "model_id": "agent-7d-v3",
+          "deployment": "tenant-acme/prod"
+        }
+      },
+      "response_status": 200,
+      "response_headers": {
+        "Content-Type": "application/pca+cose"
+      },
+      "response_body": {
+        "pca_0": "eyJhbGciOiJFZERTQSIsImtpZCI6ImZlZC1icmlkZ2Uta2lkLTAxIiwidHlwIjoicGNhK2Nvc2UifQ.eyJob3AiOjAsInBfMCI6ImFsaWNlQGV4YW1wbGUuY29tIiwib3BzIjpbInJlYWQ6ZmlsZXMvKiIsImNhbGw6c2VhcmNoX2FwaSJdLCJleGVjdXRvciI6eyJiaW5kaW5nIjoiYWdlbnQ6N2Qtdjozcm9kIn0sInByb3ZlbmFuY2UiOm51bGwsImNvbnN0cmFpbnRzIjp7InRlbXBvcmFsIjp7ImlhdCI6MTc3MDAwMDAwMCwiZXhwIjoxNzcwMDAxODAwfX19.PCA_0_FED_SIG"
+      },
+      "artifacts": [],
+      "tokens": [
+        {
+          "name": "PCA_0 (bound to AI Agent as E_0)",
+          "typ": "pca+cose",
+          "raw": "eyJhbGciOiJFZERTQSIsImtpZCI6ImZlZC1icmlkZ2Uta2lkLTAxIiwidHlwIjoicGNhK2Nvc2UifQ.eyJob3AiOjAsInBfMCI6ImFsaWNlQGV4YW1wbGUuY29tIiwib3BzIjpbInJlYWQ6ZmlsZXMvKiIsImNhbGw6c2VhcmNoX2FwaSJdLCJleGVjdXRvciI6eyJiaW5kaW5nIjoiYWdlbnQ6N2Qtdjozcm9kIn0sInByb3ZlbmFuY2UiOm51bGwsImNvbnN0cmFpbnRzIjp7InRlbXBvcmFsIjp7ImlhdCI6MTc3MDAwMDAwMCwiZXhwIjoxNzcwMDAxODAwfX19.PCA_0_FED_SIG",
+          "header": {
+            "alg": "EdDSA",
+            "kid": "fed-bridge-kid-01",
+            "typ": "pca+cose"
+          },
+          "payload": {
+            "hop": 0,
+            "p_0": "alice@example.com",
+            "ops": [
+              "read:files/*",
+              "call:search_api"
+            ],
+            "executor": {
+              "binding": "agent:7d-v3:prod"
+            },
+            "provenance": null,
+            "constraints": {
+              "temporal": {
+                "iat": 1770000000,
+                "exp": 1770001800
+              }
+            }
+          },
+          "signature_b64": "PCA_0_FED_SIG"
+        }
+      ],
+      "is_response": true,
+      "explanation": "Alice authenticates and the Federation Bridge issues PCA_0 bound to the AI Agent as E_0. The crucial design point: PCA_0.p_0 is alice@example.com, NOT the agent. The agent is the EXECUTOR (the one allowed to use this authority), but the AUTHORITY belongs to Alice. ops includes only what Alice has consented for this session: read her files, call the search API.",
+      "annotations": [
+        "executor.binding identifies the agent by deployment-specific identity (model_id + tenant + environment). Two parallel agents serving different users would each get their own PCA_0 — never share.",
+        "ops_0 is the OUTER bound for this entire agent session. Anything the agent does — directly or via tools — must fit inside this set.",
+        "constraints.exp = 1800s (30 min) is conservative for agent sessions; many deployments use 5–15 min and refresh PCA_0 from a fresh user authentication when needed.",
+        "If Alice has not consented to call:search_api, the Federation Bridge MUST not include it in ops_0. Consent shapes ops_0 at issuance — there is no later 'expand scope' mechanism."
+      ]
+    },
+    {
+      "step": 2,
+      "from": "alice",
+      "to": "agent",
+      "label": "\"summarize my 2024 files\"",
+      "method": "POST",
+      "url": "https://agent.example.com/v1/chat",
+      "request_headers": {
+        "Content-Type": "application/json",
+        "X-PIC-PCA": "eyJhbGciOiJFZERTQSIs...PCA_0_FED_SIG"
+      },
+      "request_body": {
+        "messages": [
+          {
+            "role": "user",
+            "content": "Summarize my 2024 files."
+          }
+        ]
+      },
+      "response_status": 200,
+      "response_headers": {},
+      "response_body": null,
+      "artifacts": [],
+      "tokens": [],
+      "explanation": "Alice sends a prompt to the agent. The agent now holds PCA_0 and is reasoning about how to fulfill the request. It decides it needs to call the Search Tool with a narrow scope: only 2024 files. The agent does not have ambient credentials of its own — its only path to call the Search Tool is to mint a PCA_1 bound to the tool, narrower than ops_0.",
+      "annotations": [
+        "The agent's reasoning happens in this step but is not on-the-wire. What's important from PIC's perspective is what the agent does NEXT: requests narrower authority for the tool, not 'use my credentials.'",
+        "If the agent's prompt is poisoned (prompt injection asking it to read files outside the user's intent), the worst it can do is request narrower-than-ops_0 authority — it cannot escalate beyond Alice's original consent.",
+        "The agent MAY also call other agents — that follows the same pattern, recursively narrowing authority at each delegation."
+      ]
+    },
+    {
+      "step": 3,
+      "from": "agent",
+      "to": "cat",
+      "label": "POST /poc (request narrow scope)",
+      "method": "POST",
+      "url": "https://cat.example.com/poc",
+      "request_headers": {
+        "Content-Type": "application/poc+cose",
+        "Host": "cat.example.com"
+      },
+      "request_body": "<PoC_1 — Predecessor=PCA_0; successor: ops=(read:files/2024/*), executor=tool:search-api>",
+      "response_status": 200,
+      "response_headers": {
+        "Content-Type": "application/pca+cose"
+      },
+      "response_body": null,
+      "artifacts": [
+        {
+          "type": "custom",
+          "raw_input": "predecessor PCA_0:\n  p_0  = alice@example.com\n  ops  = (read:files/*, call:search_api)\n  executor.binding = agent:7d-v3:prod\n\nsuccessor proposal:\n  ops  = (read:files/2024/*)   ← strict subset of ops_0\n  executor.binding = tool:search-api\n  constraints.exp ≤ predecessor.exp\n\nattestations:\n  agent_attestation = {\n    type: model_identity,\n    model_id: agent-7d-v3,\n    deployment: tenant-acme/prod,\n    pop: <signed hash of header||payload>\n  }",
+          "signing_key_hint": "Agent's executor private key (paired with the model identity attestation)",
+          "final_output": "PoC_1 = COSE_Sign1(\n  protected_header (alg, kid, challenge),\n  payload          (predecessor, successor, attestations),\n  signature        (Ed25519, agent's key)\n)",
+          "steps": [
+            {
+              "label": "1. Why the agent narrows ops voluntarily",
+              "value": "The agent has ops_0 = (read:files/*, call:search_api).\nIt could pass ops_0 along verbatim to the tool. But:\n\n  ✗ The tool would then have permission to read ANY file\n    of Alice's, not just the 2024 ones the user asked for.\n  ✗ A compromised or buggy tool could exfiltrate more.\n  ✗ Audit logs would show 'tool read all files' — not\n    'tool read 2024 files for the summarization task.'\n\nNarrowing to read:files/2024/* gives the tool only what\nthis call requires. Principle of least privilege, but\nactually enforced by the CAT — not by 'we promise'.\n\nIn ML terms: this is the difference between giving a\nmodel a tool with broad scope and a tool with this-call\nscope. The latter is dramatically safer because the LLM\nnever holds the wider scope at all."
+            },
+            {
+              "label": "2. Attestation: model identity",
+              "value": "PIC supports executor attestations of many shapes.\nFor an AI agent, useful attestations include:\n\n  • model_identity: which model is running (model_id),\n    in which deployment (tenant/env), with what build\n    hash. Allows policy like 'only model_id=agent-7d\n    >= v3 may call this tool.'\n\n  • TEE quote: agent runs inside a confidential VM,\n    hardware-attested. Strong guarantee that the model\n    weights and inference path haven't been tampered.\n\n  • code_artifact: signed hash of the agent's wrapper\n    code (scaffolding, prompt template). Prevents a\n    same-model, different-prompt agent from substituting.\n\nThe attestation's PoP (signature over the PoC payload\nhash) ensures this attestation can only be used in THIS\nspecific PoC — not rebound onto a different request.\n\nThis is what differentiates 'an agent acting on alice's\nbehalf' from 'someone with a stolen attestation pretending\nto be an agent acting on alice's behalf'."
+            },
+            {
+              "label": "3. The non-formulability of confused deputy",
+              "value": "Consider the classical confused deputy attack adapted\nto agents:\n\n  Attacker wants the agent to read /admin/* on alice's\n  behalf, even though alice never granted that scope.\n\nClassical mitigation: 'be careful in tool definitions.'\nThis fails under prompt injection.\n\nPIC mitigation (algebraic): the agent CANNOT request\nops not in ops_0. ops_0 = (read:files/*, call:search_api).\n/admin/* is not in read:files/*. The CAT's monotonicity\ncheck rejects any PoC where successor.ops ⊄ predecessor.ops.\n\nSo regardless of what the prompt says, regardless of\nbugs in tool wrappers, regardless of which tool the\nagent calls — Alice's authority shapes the ceiling and\nthe agent cannot lift it. Confused deputy is not a\nrisk to be mitigated; it is a category that does not\nexist in this design."
+            }
+          ]
+        }
+      ],
+      "tokens": [],
+      "explanation": "The agent submits a PoC asking the CAT to mint authority for the Search Tool, with ops strictly narrower than its own (read:files/2024/* vs read:files/*). The PoC carries the agent's model-identity attestation and a PoP signature binding the attestation to this specific PoC payload. The agent's executor key signs the outer envelope.",
+      "annotations": [
+        "ops_1 = (read:files/2024/*) is what the user actually asked for. Even if the prompt was injected to ask for /admin/*, the agent could request that — but the CAT's monotonicity check would reject (because /admin/* is not in ops_0).",
+        "The challenge in the protected header (omitted here for brevity but shown in the Causal Authority Transition flow) prevents replay even if the agent's key briefly leaked.",
+        "Multiple attestations are valid: e.g., model_identity + TEE quote together give 'this agent is running in a hardware-attested confidential VM with this exact model build.' Stronger guarantees, more setup."
+      ]
+    },
+    {
+      "step": 4,
+      "from": "cat",
+      "to": "agent",
+      "label": "PCA_1 (signed, scoped to tool)",
+      "method": "POST",
+      "url": "https://cat.example.com/poc",
+      "request_headers": {},
+      "request_body": null,
+      "response_status": 200,
+      "response_headers": {
+        "Content-Type": "application/pca+cose"
+      },
+      "response_body": {
+        "pca": "eyJhbGciOiJFZERTQSIsImtpZCI6ImNhdC1raWQtMDEiLCJ0eXAiOiJwY2ErY29zZSJ9.eyJob3AiOjEsInBfMCI6ImFsaWNlQGV4YW1wbGUuY29tIiwib3BzIjpbInJlYWQ6ZmlsZXMvMjAyNC8qIl0sImV4ZWN1dG9yIjp7ImJpbmRpbmciOiJ0b29sOnNlYXJjaC1hcGkifSwicHJvdmVuYW5jZSI6eyJjYXQiOnsia2lkIjoiZmVkLWJyaWRnZS1raWQtMDEiLCJzaWciOiJQQ0FfMF9GRURfU0lHIn0sImV4ZWN1dG9yIjp7ImtpZCI6ImFnZW50OjdkLXYzOnByb2QjayIsInNpZyI6IkFHRU5UX1BPQ19TSUcifX0sImNvbnN0cmFpbnRzIjp7InRlbXBvcmFsIjp7ImlhdCI6MTc3MDAwMDAwNSwiZXhwIjoxNzcwMDAwMzA1fX19.PCA_1_CAT_SIG"
+      },
+      "artifacts": [
+        {
+          "type": "custom",
+          "raw_input": "Monotonicity check at CAT before signing PCA_1",
+          "signing_key_hint": "CAT's signing key (kid: cat-kid-01)",
+          "final_output": "ops_1 = (read:files/2024/*)\nops_0 = (read:files/*, call:search_api)\n\nFor each op in ops_1: read:files/2024/* ⊆ read:files/*? YES\n→ ops_1 ⊆ ops_0 PROVEN → mint PCA_1",
+          "steps": [
+            {
+              "label": "1. Subset proof step-by-step",
+              "value": "successor.ops = [\"read:files/2024/*\"]\npredecessor.ops = [\"read:files/*\", \"call:search_api\"]\n\nFor each op in successor.ops:\n  read:files/2024/* ∈ predecessor.ops by glob ?\n    read:files/* matches read:files/2024/* ?\n    Path glob: /* matches /2024/* (any subpath) ✓\n  → covered by predecessor\n\n→ ops_1 ⊆ ops_0 ✓\n\np_0 inherited verbatim:\n  successor implicit p_0 = predecessor.p_0\n  = alice@example.com\n  (no override allowed; CAT will NOT honor a successor\n  proposal that tries to re-specify p_0)\n\nconstraints.exp:\n  successor.exp = 1770000305 (5 min from now)\n  predecessor.exp = 1770001800\n  successor.exp ≤ predecessor.exp ✓\n\nAll invariants hold → mint PCA_1."
+            }
+          ]
+        }
+      ],
+      "tokens": [
+        {
+          "name": "PCA_1 (Tool-bound authority)",
+          "typ": "pca+cose",
+          "raw": "eyJhbGciOiJFZERTQSIsImtpZCI6ImNhdC1raWQtMDEiLCJ0eXAiOiJwY2ErY29zZSJ9.eyJob3AiOjEsInBfMCI6ImFsaWNlQGV4YW1wbGUuY29tIiwib3BzIjpbInJlYWQ6ZmlsZXMvMjAyNC8qIl0sImV4ZWN1dG9yIjp7ImJpbmRpbmciOiJ0b29sOnNlYXJjaC1hcGkifSwicHJvdmVuYW5jZSI6eyJjYXQiOnsia2lkIjoiZmVkLWJyaWRnZS1raWQtMDEiLCJzaWciOiJQQ0FfMF9GRURfU0lHIn0sImV4ZWN1dG9yIjp7ImtpZCI6ImFnZW50OjdkLXYzOnByb2QjayIsInNpZyI6IkFHRU5UX1BPQ19TSUcifX0sImNvbnN0cmFpbnRzIjp7InRlbXBvcmFsIjp7ImlhdCI6MTc3MDAwMDAwNSwiZXhwIjoxNzcwMDAwMzA1fX19.PCA_1_CAT_SIG",
+          "header": {
+            "alg": "EdDSA",
+            "kid": "cat-kid-01",
+            "typ": "pca+cose"
+          },
+          "payload": {
+            "hop": 1,
+            "p_0": "alice@example.com",
+            "ops": [
+              "read:files/2024/*"
+            ],
+            "executor": {
+              "binding": "tool:search-api"
+            },
+            "provenance": {
+              "cat": {
+                "kid": "fed-bridge-kid-01",
+                "sig": "PCA_0_FED_SIG"
+              },
+              "executor": {
+                "kid": "agent:7d-v3:prod#k",
+                "sig": "AGENT_POC_SIG"
+              }
+            },
+            "constraints": {
+              "temporal": {
+                "iat": 1770000005,
+                "exp": 1770000305
+              }
+            }
+          },
+          "signature_b64": "PCA_1_CAT_SIG"
+        }
+      ],
+      "is_response": true,
+      "explanation": "The CAT validates the PoC, proves monotonicity (read:files/2024/* ⊆ read:files/*), confirms p_0 unchanged, and mints PCA_1. The new PCA is bound to the Search Tool as executor, has a 5-minute exp (much shorter than PCA_0), and provenance back-references both the Federation Bridge (the CAT for hop 0) and the agent's PoC signature.",
+      "annotations": [
+        "PCA_1.p_0 = alice@example.com — the tool will execute under Alice's identity, not the agent's. This is the core safety property.",
+        "ops = (read:files/2024/*) — strictly narrower than ops_0. Even if the tool wanted to read /admin/*, it has no authority to do so.",
+        "constraints.exp = 5 minutes. Fresh, narrow authority for THIS tool call. Re-issuance for a follow-up call is cheap.",
+        "provenance.executor.sig = AGENT_POC_SIG — incident response can prove the agent (specifically) authorized this tool call."
+      ]
+    },
+    {
+      "step": 5,
+      "from": "agent",
+      "to": "tool",
+      "label": "POST /search + PCA_1",
+      "method": "POST",
+      "url": "https://search.example.com/v1/search",
+      "request_headers": {
+        "Content-Type": "application/json",
+        "X-PIC-PCA": "eyJhbGciOiJFZERTQSIs...PCA_1_CAT_SIG",
+        "X-PIC-Request-Sig": "AGENT_BODY_SIG"
+      },
+      "request_body": {
+        "query": "year:2024 owner:alice",
+        "limit": 50
+      },
+      "response_status": 200,
+      "response_headers": {},
+      "response_body": null,
+      "artifacts": [],
+      "tokens": [],
+      "explanation": "The agent calls the Search Tool with PCA_1 attached and a request signature using its executor private key. The tool validates PCA_1 against the CAT's public key and confirms its own attestation matches PCA_1.executor.binding. Critically, the tool also enforces ops at execution: even if the query body asked for files outside 2024, the tool MUST refuse — ops_1 only covers read:files/2024/*.",
+      "annotations": [
+        "The tool's enforcement of ops is the last line of defense. PIC's algebraic monotonicity guarantees authority cannot expand at the CAT layer; the tool's actual code must respect ops at the data layer.",
+        "If the tool attempts to read outside ops, that is a tool bug — but PIC's audit trail (everything signed and traceable to alice@example.com) makes it observable rather than silent.",
+        "If the agent needed to make a SECOND, broader query (e.g., 2023 files), it would need to mint a SECOND PCA via a fresh PoC. Fresh narrow authority per intent — not one wide capability holding the whole window open."
+      ]
+    },
+    {
+      "step": 6,
+      "from": "tool",
+      "to": "agent",
+      "label": "200 OK (under Alice's authority)",
+      "method": "POST",
+      "url": "https://search.example.com/v1/search",
+      "request_headers": {},
+      "request_body": null,
+      "response_status": 200,
+      "response_headers": {
+        "Content-Type": "application/json"
+      },
+      "response_body": {
+        "results": [
+          {
+            "path": "/files/2024/q1-summary.md",
+            "score": 0.98
+          },
+          {
+            "path": "/files/2024/notes.md",
+            "score": 0.81
+          }
+        ],
+        "_pic_audit": {
+          "executed_for": "alice@example.com",
+          "executed_under_ops": [
+            "read:files/2024/*"
+          ],
+          "called_by_executor": "agent:7d-v3:prod",
+          "tool": "tool:search-api"
+        }
+      },
+      "artifacts": [],
+      "tokens": [],
+      "is_response": true,
+      "explanation": "The Search Tool returns 2024 files only. The audit envelope makes the security property visible: the operation was performed FOR Alice, UNDER the narrow ops, BY the agent (named in called_by_executor). All four facts are cryptographically anchored — Alice signed (via OIDC) → bridge issued PCA_0 → agent signed PoC_1 → CAT issued PCA_1 → tool executed. No step in this chain has authority that came from anywhere except Alice's original consent.",
+      "annotations": [
+        "Compare to a traditional design where the tool sees the agent as the actor: there, audit answers 'what did the agent do?' Here, audit answers 'what did Alice authorize, and which agent acted on her behalf?' — a much more useful question for incident response.",
+        "If Alice's consent did not include call:search_api, the agent could not have requested PCA_1 at all (call:search_api is in ops_0 — see step 1). Consent shapes the ceiling.",
+        "If the agent calls a SECOND tool (e.g., a summarizer), the same pattern repeats: PoC for narrow scope → PCA_2 bound to summarizer → execution under Alice's authority. The chain extends with monotonicity preserved.",
+        "Revocation is real: if Alice ends her session, the next time the agent submits a PoC, the CAT can refuse (revocation list lookup at PoC validation). No 'ambient credential' to forget about."
+      ]
+    }
+  ]
+}

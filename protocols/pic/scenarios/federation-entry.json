@@ -1,0 +1,292 @@
+{
+  "id": "pic-federation-entry",
+  "title": "PIC — Federation Bridge Entry",
+  "description": "How a PIC transaction starts. An external identity (here OAuth/OIDC, but the same pattern applies to SPIFFE, DID/VC, X.509) is translated into PCA_0 — the root Causal Authority that anchors every subsequent hop. The Federation Bridge extracts the immutable origin principal p_0 from the credential (sub claim → p_0) and the initial operation set ops_0 from the credential's authority claims (scope → ops_0), then signs PCA_0 with executor binding to the first executor E_0. From this point on, p_0 is immutable and ops can only monotonically restrict.",
+  "rfc": "draft-pic-spec-00",
+  "specUrl": "https://github.com/pic-protocol/pic-spec",
+  "category": "PIC",
+  "participants": [
+    {
+      "id": "alice",
+      "label": "Alice (User)",
+      "type": "user"
+    },
+    {
+      "id": "oidc",
+      "label": "OIDC Provider",
+      "type": "idp"
+    },
+    {
+      "id": "fed",
+      "label": "Federation Bridge",
+      "type": "idp"
+    },
+    {
+      "id": "e0",
+      "label": "Executor E_0",
+      "type": "server"
+    }
+  ],
+  "steps": [
+    {
+      "step": 1,
+      "from": "alice",
+      "to": "oidc",
+      "label": "POST /token (auth code)",
+      "method": "POST",
+      "url": "https://oidc.example.com/token",
+      "request_headers": {
+        "Content-Type": "application/x-www-form-urlencoded",
+        "Host": "oidc.example.com"
+      },
+      "request_body": "grant_type=authorization_code&code=auth_code_xyz&redirect_uri=https%3A%2F%2Fapp.example.com%2Fcb&client_id=app-client",
+      "response_status": 200,
+      "response_headers": {
+        "Content-Type": "application/json",
+        "Cache-Control": "no-store"
+      },
+      "response_body": null,
+      "artifacts": [],
+      "tokens": [],
+      "explanation": "Alice authenticates at her organization's OIDC Provider via a standard OAuth 2.0 Authorization Code exchange. This is the external authentication step — PIC does not replace OAuth/OIDC; it consumes the resulting credential to anchor a transaction. Any source that can carry an immutable principal identifier and an authority set works equally (SPIFFE SVID, DID/VC, X.509).",
+      "annotations": [
+        "PIC is identity-system-agnostic. The source credential here is OIDC, but pic-spec.md §6.5.5 and §6.5.6 cover SPIFFE, DID/VC, and X.509 as equivalent entry points.",
+        "Only two facts must be extractable from the credential: an immutable principal identifier (becomes p_0) and an authority set (becomes ops_0).",
+        "The credential is consumed once at the boundary and never propagated further — only the derived PCA_0 flows into the trust plane."
+      ]
+    },
+    {
+      "step": 2,
+      "from": "oidc",
+      "to": "alice",
+      "label": "ID Token (JWT)",
+      "method": "POST",
+      "url": "https://oidc.example.com/token",
+      "request_headers": {},
+      "request_body": null,
+      "response_status": 200,
+      "response_headers": {
+        "Content-Type": "application/json"
+      },
+      "response_body": {
+        "access_token": "eyJhbGciOiJSUzI1NiIs...AS_AT",
+        "id_token": "eyJhbGciOiJSUzI1NiIsImtpZCI6Im9pZGMta2lkLTAxIiwidHlwIjoiSldUIn0.eyJpc3MiOiJodHRwczovL29pZGMuZXhhbXBsZS5jb20iLCJzdWIiOiJhbGljZUBleGFtcGxlLmNvbSIsImF1ZCI6ImFwcC1jbGllbnQiLCJzY29wZSI6InJlYWQ6ZmlsZXMgd3JpdGU6ZmlsZXMiLCJpYXQiOjE3NzAwMDAwMDAsImV4cCI6MTc3MDAwMzYwMH0.OIDC_SIG",
+        "token_type": "Bearer",
+        "expires_in": 3600
+      },
+      "artifacts": [],
+      "tokens": [
+        {
+          "name": "OIDC ID Token",
+          "typ": "JWT",
+          "raw": "eyJhbGciOiJSUzI1NiIsImtpZCI6Im9pZGMta2lkLTAxIiwidHlwIjoiSldUIn0.eyJpc3MiOiJodHRwczovL29pZGMuZXhhbXBsZS5jb20iLCJzdWIiOiJhbGljZUBleGFtcGxlLmNvbSIsImF1ZCI6ImFwcC1jbGllbnQiLCJzY29wZSI6InJlYWQ6ZmlsZXMgd3JpdGU6ZmlsZXMiLCJpYXQiOjE3NzAwMDAwMDAsImV4cCI6MTc3MDAwMzYwMH0.OIDC_SIG",
+          "header": {
+            "alg": "RS256",
+            "kid": "oidc-kid-01",
+            "typ": "JWT"
+          },
+          "payload": {
+            "iss": "https://oidc.example.com",
+            "sub": "alice@example.com",
+            "aud": "app-client",
+            "scope": "read:files write:files",
+            "iat": 1770000000,
+            "exp": 1770003600
+          },
+          "signature_b64": "OIDC_SIG"
+        }
+      ],
+      "is_response": true,
+      "explanation": "The OIDC Provider returns an ID Token. Two claims will be load-bearing for PIC: sub (the principal identifier — will become p_0) and scope (the authority set — will become ops_0). Everything else (aud, iat, exp) is OIDC bookkeeping and does not propagate into the PIC trust plane.",
+      "annotations": [
+        "sub MUST be stable across this user's sessions. PIC's whole security model rests on p_0 being immutable.",
+        "scope grants are typically broader than what any single hop needs — that's expected. ops monotonically restricts as the transaction descends.",
+        "PIC does not require the ID Token to be exchangeable, refreshable, or DPoP-bound. It is read once and dropped at the Federation Bridge."
+      ]
+    },
+    {
+      "step": 3,
+      "from": "alice",
+      "to": "e0",
+      "label": "GET /api (with ID token)",
+      "method": "GET",
+      "url": "https://api.example.com/v1/files",
+      "request_headers": {
+        "Authorization": "Bearer eyJhbGciOiJSUzI1NiIs...OIDC_SIG",
+        "Host": "api.example.com"
+      },
+      "request_body": null,
+      "response_status": 200,
+      "response_headers": {
+        "Content-Type": "application/json"
+      },
+      "response_body": null,
+      "artifacts": [],
+      "tokens": [],
+      "explanation": "Alice's client calls the API gateway (Executor E_0 — the entry point into the trust domain) carrying her ID token. E_0 will not act on the ID token directly; it will hand it to the Federation Bridge, which is the only component authorized to anchor a new PIC transaction. This separation keeps trust-anchor-issuance off the request path of every executor.",
+      "annotations": [
+        "E_0 is just the first hop inside the PIC trust domain. It has no special authority — its role is to be bound as the executor in PCA_0 so that it (and only it) can later present PoC_1 to advance the transaction.",
+        "In a typical deployment, E_0 is an API gateway, ingress proxy, or edge service. It is the seam between 'external credential world' and 'PIC causal authority world'.",
+        "Forwarding the ID token to the Federation Bridge (next step) can be done out-of-band, via a sidecar, or via a header — implementation choice. The bridge is logically the single anchor point."
+      ]
+    },
+    {
+      "step": 4,
+      "from": "e0",
+      "to": "fed",
+      "label": "POST /pic/bootstrap",
+      "method": "POST",
+      "url": "https://fed.example.com/pic/bootstrap",
+      "request_headers": {
+        "Content-Type": "application/json",
+        "Host": "fed.example.com"
+      },
+      "request_body": {
+        "credential_type": "oidc_id_token",
+        "credential": "eyJhbGciOiJSUzI1NiIs...OIDC_SIG",
+        "executor_attestation": {
+          "type": "spiffe_svid",
+          "spiffe_id": "spiffe://example.com/gateway/e0",
+          "svid": "<X.509 SVID for E_0>"
+        }
+      },
+      "response_status": 200,
+      "response_headers": {
+        "Content-Type": "application/json"
+      },
+      "response_body": null,
+      "artifacts": [
+        {
+          "type": "custom",
+          "raw_input": "ID Token claims:\n  iss = https://oidc.example.com\n  sub = alice@example.com\n  scope = read:files write:files\n\nE_0 attestation:\n  spiffe_id = spiffe://example.com/gateway/e0",
+          "signing_key_hint": "No signing — this is the identity-mapping rule the Federation Bridge applies to derive p_0 and ops_0.",
+          "final_output": "p_0 = \"alice@example.com\"\nops_0 = [\"read:files/*\", \"write:files/*\"]\nexecutor.binding = \"spiffe://example.com/gateway/e0\"",
+          "steps": [
+            {
+              "label": "1. Extract p_0 from credential (pic-spec.md §6.5.5)",
+              "value": "Source: OIDC ID Token\nRule:   p_0 = ID_Token.sub\n\np_0 = \"alice@example.com\"\n\nThis value is now FROZEN for the entire transaction.\nNo subsequent hop, bridge, or policy step is allowed\nto change it. Every PCA_i.p_0 MUST equal this value.\n\nIdentity mapping by source (pic-spec.md table §6.5.5):\n  OAuth/OIDC  → JWT.sub        → p_0\n  SPIFFE      → SVID SPIFFE ID  → p_0\n  DID/VC      → DID URI         → p_0\n  X.509       → cert Subject DN → p_0\n\nThe principle: whatever stable identifier the credential\ncarries IS the origin principal. PIC does not rename it,\ntranslate it, or strip it."
+            },
+            {
+              "label": "2. Extract ops_0 from credential (pic-spec.md §6.5.5)",
+              "value": "Source: OIDC ID Token\nRule:   ops_0 = parsed authority claims\n\nID_Token.scope = \"read:files write:files\"\n\nops_0 = [\n  \"read:files/*\",\n  \"write:files/*\"\n]\n\nThis is the BROADEST authority alice will ever have in\nthis transaction. From here, monotonicity is enforced:\n  ops_0 ⊇ ops_1 ⊇ ops_2 ⊇ ...\n\nAuthority mapping by source:\n  OAuth/OIDC  → scope claim\n  SPIFFE      → trust-domain policy attached to SPIFFE ID\n  DID/VC      → VC credential subject claims\n  X.509       → certificate extensions / role attributes\n\nThe Federation Bridge MAY apply a local restricting\npolicy here (e.g., 'OIDC tokens from this issuer never\ngrant write:billing'). Restriction is allowed; expansion\nis not — the bridge cannot grant ops not justified by\nthe source credential."
+            },
+            {
+              "label": "3. Bind PCA_0 to E_0",
+              "value": "Source: E_0's executor attestation (SPIFFE SVID)\nRule:   executor.binding = attestation identity\n\nexecutor.binding = \"spiffe://example.com/gateway/e0\"\n\nWhy bind to a specific executor: PCA is non-transferable\nby design. If E_0 hands PCA_0 to anyone other than CAT\n(via a properly signed PoC_1), the recipient cannot use\nit — their attestation will not match executor.binding.\n\nThis closes the 'stolen token' attack class: PCA is not\na bearer credential. It is a claim about authority that\nis only meaningful when presented by the attested executor."
+            }
+          ]
+        }
+      ],
+      "tokens": [],
+      "explanation": "E_0 forwards the ID token to the Federation Bridge along with its own executor attestation (a SPIFFE SVID here, but TEE quote / X.509 / VP all work). The Federation Bridge is the single place authorized to mint PCA_0 — concentrating trust-anchor issuance to one component is what makes the rest of the trust plane simple.",
+      "annotations": [
+        "The Federation Bridge MUST validate the source credential against its issuer's keys (here: fetch OIDC JWKS, verify RS256 signature, check iss/aud/exp).",
+        "The Federation Bridge MUST validate E_0's executor attestation independently. PCA_0 is bound to E_0; the bridge needs to know who E_0 actually is.",
+        "The Federation Bridge MAY consult Governance here to apply ingress policy (e.g., reject if the user is on a deny list). Governance is consulted at issuance, not at every hop."
+      ]
+    },
+    {
+      "step": 5,
+      "from": "fed",
+      "to": "e0",
+      "label": "PCA_0 (signed)",
+      "method": "POST",
+      "url": "https://fed.example.com/pic/bootstrap",
+      "request_headers": {},
+      "request_body": null,
+      "response_status": 200,
+      "response_headers": {
+        "Content-Type": "application/pca+json"
+      },
+      "response_body": {
+        "pca_0": "eyJhbGciOiJFZERTQSIsImtpZCI6ImZlZC1icmlkZ2Uta2lkLTAxIiwidHlwIjoicGNhK2Nvc2UifQ.eyJob3AiOjAsInBfMCI6ImFsaWNlQGV4YW1wbGUuY29tIiwib3BzIjpbInJlYWQ6ZmlsZXMvKiIsIndyaXRlOmZpbGVzLyoiXSwiZXhlY3V0b3IiOnsiYmluZGluZyI6InNwaWZmZTovL2V4YW1wbGUuY29tL2dhdGV3YXkvZTAifSwicHJvdmVuYW5jZSI6bnVsbCwiY29uc3RyYWludHMiOnsidGVtcG9yYWwiOnsiaWF0IjoxNzcwMDAwMDA1LCJleHAiOjE3NzAwMDM2MDV9LCJlbnZpcm9ubWVudCI6eyJyZWdpb25zIjpbInVzLXdlc3QtMiJdfX19.PCA_0_FED_SIG"
+      },
+      "artifacts": [],
+      "tokens": [
+        {
+          "name": "PCA_0 (Root Causal Authority)",
+          "typ": "pca+cose",
+          "raw": "eyJhbGciOiJFZERTQSIsImtpZCI6ImZlZC1icmlkZ2Uta2lkLTAxIiwidHlwIjoicGNhK2Nvc2UifQ.eyJob3AiOjAsInBfMCI6ImFsaWNlQGV4YW1wbGUuY29tIiwib3BzIjpbInJlYWQ6ZmlsZXMvKiIsIndyaXRlOmZpbGVzLyoiXSwiZXhlY3V0b3IiOnsiYmluZGluZyI6InNwaWZmZTovL2V4YW1wbGUuY29tL2dhdGV3YXkvZTAifSwicHJvdmVuYW5jZSI6bnVsbCwiY29uc3RyYWludHMiOnsidGVtcG9yYWwiOnsiaWF0IjoxNzcwMDAwMDA1LCJleHAiOjE3NzAwMDM2MDV9LCJlbnZpcm9ubWVudCI6eyJyZWdpb25zIjpbInVzLXdlc3QtMiJdfX19.PCA_0_FED_SIG",
+          "header": {
+            "alg": "EdDSA",
+            "kid": "fed-bridge-kid-01",
+            "typ": "pca+cose"
+          },
+          "payload": {
+            "hop": 0,
+            "p_0": "alice@example.com",
+            "ops": [
+              "read:files/*",
+              "write:files/*"
+            ],
+            "executor": {
+              "binding": "spiffe://example.com/gateway/e0"
+            },
+            "provenance": null,
+            "constraints": {
+              "temporal": {
+                "iat": 1770000005,
+                "exp": 1770003605
+              },
+              "environment": {
+                "regions": [
+                  "us-west-2"
+                ]
+              }
+            }
+          },
+          "signature_b64": "PCA_0_FED_SIG"
+        }
+      ],
+      "is_response": true,
+      "explanation": "The Federation Bridge signs PCA_0 — the root of the causal chain. Note provenance is null: PCA_0 has no predecessor (it is the predecessor for everything that follows). hop=0. p_0 is now frozen for the entire transaction. The bridge's signature is what every downstream CAT/executor will trace back to when verifying provenance.",
+      "annotations": [
+        "PCA_0 is the only PCA in the entire chain whose provenance is null. Every PCA_i for i>0 MUST reference its predecessor's CAT signature and its predecessor executor's signature.",
+        "The transport encoding here is shown as JWT-like for readability, but pic-spec.md uses COSE_Sign1 (CBOR-encoded) on the wire. The 3-part header.payload.signature structure is identical.",
+        "Constraints (temporal exp, environment regions) attached at PCA_0 are the OUTER bound. Any successor PCA's constraints MUST be a subset (e.g., later hops can have shorter exp, but never longer).",
+        "The Federation Bridge's signing key (kid=fed-bridge-kid-01) is part of the trust domain's known anchor set. Every CAT and executor in this domain knows this key."
+      ]
+    },
+    {
+      "step": 6,
+      "from": "e0",
+      "to": "alice",
+      "label": "200 OK (transaction anchored)",
+      "method": "GET",
+      "url": "https://api.example.com/v1/files",
+      "request_headers": {},
+      "request_body": null,
+      "response_status": 200,
+      "response_headers": {
+        "Content-Type": "application/json"
+      },
+      "response_body": {
+        "files": [
+          {
+            "name": "report-2024.pdf",
+            "size": 12048
+          },
+          {
+            "name": "notes.md",
+            "size": 482
+          }
+        ],
+        "_pic": {
+          "p_0": "alice@example.com",
+          "hop": 0,
+          "executor": "spiffe://example.com/gateway/e0"
+        }
+      },
+      "artifacts": [],
+      "tokens": [],
+      "is_response": true,
+      "explanation": "E_0 now holds PCA_0 and is the active executor for alice's transaction. It returns alice's response. From this point forward, any further hop (E_0 calling a downstream service) follows the Causal Authority Transition flow — see the next scenario.",
+      "annotations": [
+        "The transaction is anchored: p_0 = alice, ops = (read:files/*, write:files/*), executor = E_0.",
+        "If E_0 needs to fan out to multiple services, each fan-out call requires its own Causal Authority Transition (one PoC + one new PCA_1 per recipient).",
+        "If alice's session ends or PCA_0 expires (1-hour TTL here), the transaction ends. There is no refresh-token equivalent — PCA is short-lived by design.",
+        "The _pic envelope shown in the response body is illustrative for this explorer; in practice PIC envelopes are out-of-band (response headers, sidecar metadata, observability data)."
+      ]
+    }
+  ]
+}

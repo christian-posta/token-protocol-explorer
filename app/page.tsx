@@ -131,6 +131,22 @@ const PROTOCOLS = [
     ],
   },
   {
+    id: "pic",
+    name: "PIC",
+    rfc: "draft-pic-spec-00",
+    rfcUrl: "https://github.com/pic-protocol/pic-spec",
+    accent: "border-pink-500/35 hover:border-pink-500/55",
+    iconWrap: "bg-pink-500/15 text-pink-400",
+    description:
+      "Provenance Identity Continuity — replaces Proof of Possession with Proof of Continuity. Authority is anchored to an immutable origin principal (p_0) and monotonically restricted at every causal hop, eliminating confused deputy and ambient authority attacks across microservices, federations, and AI agents.",
+    scenarios: [
+      { label: "Federation Bridge Entry", href: "/pic/federation-entry" },
+      { label: "Causal Authority Transition", href: "/pic/causal-authority-transition" },
+      { label: "Cross-Domain Federation", href: "/pic/cross-domain" },
+      { label: "AI Agent Orchestration", href: "/pic/ai-agent-orchestration" },
+    ],
+  },
+  {
     id: "id-jag",
     name: "ID-JAG (Xaa)",
     rfc: "IETF Draft",

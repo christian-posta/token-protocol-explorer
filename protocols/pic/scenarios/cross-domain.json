@@ -1,0 +1,339 @@
+{
+  "id": "pic-cross-domain",
+  "title": "PIC — Cross-Domain Federation",
+  "description": "A PIC transaction crosses an organizational trust boundary. Domain A (e.g., Partner) holds a PCA whose chain of trust ends at CAT_A's keys, which Domain B (e.g., Enterprise) does not natively trust. The Ingress Bridge at the boundary validates the incoming PCA against an inter-domain trust agreement, applies a domain-B policy that further restricts ops (a typical 'partners get read-only' rule), and re-anchors the transaction by minting PCA_int_0 against Domain B's CAT_B. Three invariants MUST hold: origin preservation (p_0 unchanged), monotonicity (ops_int ⊆ ops_external), and no expansion (the bridge cannot grant authority not justified by the incoming PCA). References pic-spec.md §6.5.2 (Federation Bridges).",
+  "rfc": "draft-pic-spec-00",
+  "specUrl": "https://github.com/pic-protocol/pic-spec",
+  "category": "PIC",
+  "participants": [
+    {
+      "id": "ea",
+      "label": "Executor E_A (Domain A)",
+      "type": "client"
+    },
+    {
+      "id": "ingress",
+      "label": "Ingress Bridge",
+      "type": "idp"
+    },
+    {
+      "id": "cata",
+      "label": "CAT_A (Partner keys)",
+      "type": "kms"
+    },
+    {
+      "id": "catb",
+      "label": "CAT_B (Enterprise)",
+      "type": "kms"
+    },
+    {
+      "id": "eb",
+      "label": "Executor E_B (Domain B)",
+      "type": "server"
+    }
+  ],
+  "steps": [
+    {
+      "step": 1,
+      "from": "ea",
+      "to": "ingress",
+      "label": "POST /v1/orders + PCA_A_n",
+      "method": "POST",
+      "url": "https://ingress.enterprise.example.com/v1/orders",
+      "request_headers": {
+        "Content-Type": "application/json",
+        "X-PIC-PCA": "eyJhbGciOiJFZERTQSIs...PCA_A_CAT_A_SIG",
+        "X-PIC-Request-Sig": "EA_BODY_SIG",
+        "Host": "ingress.enterprise.example.com"
+      },
+      "request_body": {
+        "order_id": "ord-998877",
+        "operation": "fetch_status"
+      },
+      "response_status": 200,
+      "response_headers": {
+        "Content-Type": "application/json"
+      },
+      "response_body": null,
+      "artifacts": [],
+      "tokens": [
+        {
+          "name": "PCA_A_n (Domain A authority — incoming)",
+          "typ": "pca+cose",
+          "raw": "eyJhbGciOiJFZERTQSIsImtpZCI6ImNhdC1hLWtpZC0wMSIsInR5cCI6InBjYStjb3NlIn0.eyJob3AiOjMsInBfMCI6ImFsaWNlQHBhcnRuZXItYS5jb20iLCJvcHMiOlsicmVhZDpvcmRlcnMvKiIsIndyaXRlOm9yZGVycy8qIl0sImV4ZWN1dG9yIjp7ImJpbmRpbmciOiJzcGlmZmU6Ly9wYXJ0bmVyLWEuY29tL3N2Yy9lZ3Jlc3MifSwicHJvdmVuYW5jZSI6eyJjYXQiOnsia2lkIjoiY2F0LWEta2lkLTAxIn19LCJjb25zdHJhaW50cyI6eyJ0ZW1wb3JhbCI6eyJleHAiOjE3NzAwMDM2MDV9fX0.PCA_A_CAT_A_SIG",
+          "header": {
+            "alg": "EdDSA",
+            "kid": "cat-a-kid-01",
+            "typ": "pca+cose"
+          },
+          "payload": {
+            "hop": 3,
+            "p_0": "alice@partner-a.com",
+            "ops": [
+              "read:orders/*",
+              "write:orders/*"
+            ],
+            "executor": {
+              "binding": "spiffe://partner-a.com/svc/egress"
+            },
+            "provenance": {
+              "cat": {
+                "kid": "cat-a-kid-01"
+              }
+            },
+            "constraints": {
+              "temporal": {
+                "exp": 1770003605
+              }
+            }
+          },
+          "signature_b64": "PCA_A_CAT_A_SIG"
+        }
+      ],
+      "explanation": "Domain A's egress executor E_A sends its request to Domain B's Ingress Bridge, attaching PCA_A_n. The PCA shows p_0=alice@partner-a.com, ops=(read:orders/*, write:orders/*), and signing CAT is CAT_A (kid=cat-a-kid-01). Domain B has no native trust relationship with CAT_A — the Ingress Bridge will validate and re-anchor before forwarding internally.",
+      "annotations": [
+        "The Ingress Bridge is THE policy enforcement point for incoming partner traffic. Nothing passes into Domain B until re-anchored.",
+        "E_A also includes X-PIC-Request-Sig — the body signed by E_A's key. The bridge verifies this to confirm the sender matches PCA_A_n.executor.binding before doing any policy work.",
+        "If the Ingress Bridge is unavailable, the partner cannot enter Domain B at all. This is a deliberate choke point — the natural place to apply rate limiting, threat detection, and DLP."
+      ]
+    },
+    {
+      "step": 2,
+      "from": "ingress",
+      "to": "cata",
+      "label": "GET /jwks (resolve CAT_A pubkey)",
+      "method": "GET",
+      "url": "https://keys.partner-a.com/jwks.json",
+      "request_headers": {
+        "Accept": "application/jwk-set+json",
+        "Host": "keys.partner-a.com"
+      },
+      "request_body": null,
+      "response_status": 200,
+      "response_headers": {
+        "Content-Type": "application/jwk-set+json",
+        "Cache-Control": "max-age=3600"
+      },
+      "response_body": {
+        "keys": [
+          {
+            "kid": "cat-a-kid-01",
+            "kty": "OKP",
+            "crv": "Ed25519",
+            "x": "CAT_A_PUBLIC_KEY_BASE64URL"
+          }
+        ]
+      },
+      "artifacts": [
+        {
+          "type": "custom",
+          "raw_input": "PCA_A_n.header.kid = cat-a-kid-01\nTarget JWKS URL from inter-domain trust agreement:\n  https://keys.partner-a.com/jwks.json",
+          "signing_key_hint": "No signing — this is a public-key fetch, used to verify PCA_A_n's signature.",
+          "final_output": "CAT_A public key (Ed25519):\n  kid = cat-a-kid-01\n  x   = CAT_A_PUBLIC_KEY_BASE64URL\n\nUsed in next step to verify: PCA_A_n.signature",
+          "steps": [
+            {
+              "label": "1. Inter-domain trust agreement",
+              "value": "Domain B knows Partner A's JWKS URL because of a\npre-established inter-domain trust agreement:\n  {\n    partner_id: \"partner-a.com\",\n    jwks_uri: \"https://keys.partner-a.com/jwks.json\",\n    allowed_algorithms: [\"EdDSA\"],\n    allowed_p_0_pattern: \"*@partner-a.com\",\n    policy_ops: [\"read:orders/*\"]\n  }\n\nThis agreement is the cryptographic embodiment of\n'we trust Domain A's CAT to sign authority claims\nfor Domain A principals.'\n\nTrust-anchor publication can also use DID resolution,\nSPIFFE federation bundle endpoints, or static config.\nThe protocol does not prescribe; only that the bridge\nhas a verifiable, out-of-band route to the source keys."
+            },
+            {
+              "label": "2. Verify PCA_A_n signature",
+              "value": "verify_signature(\n  PCA_A_n_payload || PCA_A_n_protected_header,\n  PCA_A_n_signature,          ← PCA_A_CAT_A_SIG\n  CAT_A_public_key            ← fetched above\n) → MUST be valid\n\nAlso verify temporal constraints:\n  PCA_A_n.constraints.temporal.exp > now? ✓\n\nAlso verify executor binding matches sender:\n  PCA_A_n.executor.binding\n    = spiffe://partner-a.com/svc/egress\n  TLS peer SVID or request sig key\n    = spiffe://partner-a.com/svc/egress ✓\n\nIf any check fails → reject. Partner cannot enter."
+            },
+            {
+              "label": "3. Apply domain-B policy (monotonic intersection)",
+              "value": "Incoming ops: (read:orders/*, write:orders/*)\nDomain B policy for partner-a: (read:orders/*)\n\nresult = ops_in ∩ policy_allowed\n       = (read:orders/*)\n\nINVARIANT 1 (origin preservation):\n  p_0 = alice@partner-a.com → PRESERVED verbatim.\n  Domain B does NOT alias to a local user.\n\nINVARIANT 2 (monotonicity):\n  result ⊆ incoming ops ✓\n  result ⊆ domain policy ✓\n\nINVARIANT 3 (no expansion):\n  Intersection semantics — even if domain policy\n  nominally allowed admin:*, intersection with incoming\n  caps it. Bridge CANNOT manufacture new authority.\n\nCompose PCA_int_0 proposal:\n  p_0 = alice@partner-a.com  (preserved)\n  ops = (read:orders/*)      (intersected)\n  exp = min(incoming.exp, now + 1800s)   (capped)"
+            }
+          ]
+        }
+      ],
+      "tokens": [],
+      "is_response": true,
+      "explanation": "The Ingress Bridge fetches CAT_A's JWKS to verify PCA_A_n's signature, then runs the three-invariant validation pipeline: verify signature → preserve p_0 → intersect ops with domain-B policy. The result is a proposal for PCA_int_0 that carries Alice's identity from Domain A, narrowed to what Domain B allows partners to do.",
+      "annotations": [
+        "JWKS is aggressively cached (Cache-Control: 3600s here). Key rotation requires overlapping kids in the JWKS during cutover.",
+        "If the JWKS endpoint is unreachable, the bridge MUST NOT fail open — it MUST reject the request. Partners cannot enter without signature verification.",
+        "Governance integration is natural here: a PDP can be consulted at this exact step to apply per-tenant or per-purpose constraints atop the static inter-domain policy."
+      ]
+    },
+    {
+      "step": 3,
+      "from": "ingress",
+      "to": "catb",
+      "label": "POST /poc (re-anchor to CAT_B)",
+      "method": "POST",
+      "url": "https://cat-b.enterprise.example.com/poc",
+      "request_headers": {
+        "Content-Type": "application/poc+cose",
+        "Host": "cat-b.enterprise.example.com"
+      },
+      "request_body": "eyJhbGciOiJFZERTQSIsImtpZCI6Imluz3Jlc3Mta2lkLTAxIn0.eyJtb2RlIjoiZmVkZXJhdGlvbi1lbnRyeSIsInByZWRlY2Vzc29yIjoiUENBX0FfbiIsInN1Y2Nlc3NvciI6eyJob3AiOjAsInBfMCI6ImFsaWNlQHBhcnRuZXItYS5jb20iLCJvcHMiOlsicmVhZDpvcmRlcnMvKiJdLCJleGVjdXRvciI6eyJiaW5kaW5nIjoic3BpZmZlOi8vZW50ZXJwcmlzZS5jb20vc3ZjL29yZGVyLWFwaSJ9LCJwcm92ZW5hbmNlIjp7ImNhdCI6eyJraWQiOiJjYXQtYS1raWQtMDEifX0sImNvbnN0cmFpbnRzIjp7InRlbXBvcmFsIjp7ImV4cCI6MTc3MDAwMTgwNX19fSwiYXR0ZXN0YXRpb25zIjpbeyJ0eXBlIjoic3BpZmZlX3N2aWQiLCJzcGlmZmVfaWQiOiJzcGlmZmU6Ly9lbnRlcnByaXNlLmNvbS9zdmMvaW5ncmVzcyJ9XX0.INGRESS_POC_SIG",
+      "response_status": 200,
+      "response_headers": {
+        "Content-Type": "application/pca+cose"
+      },
+      "response_body": null,
+      "artifacts": [],
+      "tokens": [
+        {
+          "name": "Bridge PoC (federation-entry mode)",
+          "typ": "poc+cose",
+          "raw": "eyJhbGciOiJFZERTQSIsImtpZCI6Imluz3Jlc3Mta2lkLTAxIn0.eyJtb2RlIjoiZmVkZXJhdGlvbi1lbnRyeSIsInByZWRlY2Vzc29yIjoiUENBX0FfbiIsInN1Y2Nlc3NvciI6eyJob3AiOjAsInBfMCI6ImFsaWNlQHBhcnRuZXItYS5jb20iLCJvcHMiOlsicmVhZDpvcmRlcnMvKiJdLCJleGVjdXRvciI6eyJiaW5kaW5nIjoic3BpZmZlOi8vZW50ZXJwcmlzZS5jb20vc3ZjL29yZGVyLWFwaSJ9LCJwcm92ZW5hbmNlIjp7ImNhdCI6eyJraWQiOiJjYXQtYS1raWQtMDEifX0sImNvbnN0cmFpbnRzIjp7InRlbXBvcmFsIjp7ImV4cCI6MTc3MDAwMTgwNX19fSwiYXR0ZXN0YXRpb25zIjpbeyJ0eXBlIjoic3BpZmZlX3N2aWQiLCJzcGlmZmVfaWQiOiJzcGlmZmU6Ly9lbnRlcnByaXNlLmNvbS9zdmMvaW5ncmVzcyJ9XX0.INGRESS_POC_SIG",
+          "header": {
+            "alg": "EdDSA",
+            "kid": "ingress-kid-01"
+          },
+          "payload": {
+            "mode": "federation-entry",
+            "predecessor": "PCA_A_n (full — validated against CAT_A JWKS)",
+            "successor": {
+              "hop": 0,
+              "p_0": "alice@partner-a.com",
+              "ops": [
+                "read:orders/*"
+              ],
+              "executor": {
+                "binding": "spiffe://enterprise.com/svc/order-api"
+              },
+              "provenance": {
+                "cat": {
+                  "kid": "cat-a-kid-01"
+                }
+              },
+              "constraints": {
+                "temporal": {
+                  "exp": 1770001805
+                }
+              }
+            },
+            "attestations": [
+              {
+                "type": "spiffe_svid",
+                "spiffe_id": "spiffe://enterprise.com/svc/ingress"
+              }
+            ]
+          },
+          "signature_b64": "INGRESS_POC_SIG"
+        }
+      ],
+      "explanation": "The Ingress Bridge submits a federation-entry PoC to CAT_B. This is structurally a normal PoC — predecessor (the validated PCA_A_n), successor proposal, and the bridge's own attestation — but mode=federation-entry signals re-anchoring across a boundary rather than an internal hop. hop=0 in the successor is the cue. The bridge's SPIFFE SVID attests it is the authorized cross-domain entry point.",
+      "annotations": [
+        "Only bridges whose attestation matches the CAT_B-registered 'authorized federation bridges' list can submit federation-entry PoCs. Arbitrary executors cannot re-anchor.",
+        "The predecessor PCA_A_n is included in full so CAT_B can see the complete cross-domain provenance for audit. CAT_B does not need to re-verify the Domain A signature — the bridge already did.",
+        "successor.provenance.cat.kid=cat-a-kid-01 is the audit back-reference — months later, Domain B can trace this internal authority back to a specific Domain A CAT signature."
+      ]
+    },
+    {
+      "step": 4,
+      "from": "catb",
+      "to": "ingress",
+      "label": "PCA_int_0 (signed by CAT_B)",
+      "method": "POST",
+      "url": "https://cat-b.enterprise.example.com/poc",
+      "request_headers": {},
+      "request_body": null,
+      "response_status": 200,
+      "response_headers": {
+        "Content-Type": "application/pca+cose"
+      },
+      "response_body": {
+        "pca": "eyJhbGciOiJFZERTQSIsImtpZCI6ImNhdC1iLWtpZC0wMSIsInR5cCI6InBjYStjb3NlIn0.eyJob3AiOjAsInBfMCI6ImFsaWNlQHBhcnRuZXItYS5jb20iLCJvcHMiOlsicmVhZDpvcmRlcnMvKiJdLCJleGVjdXRvciI6eyJiaW5kaW5nIjoic3BpZmZlOi8vZW50ZXJwcmlzZS5jb20vc3ZjL29yZGVyLWFwaSJ9LCJwcm92ZW5hbmNlIjp7ImNhdCI6eyJraWQiOiJjYXQtYS1raWQtMDEiLCJzaWciOiJQQ0FfQV9DQVRfQV9TSUcifSwiZXhlY3V0b3IiOnsia2lkIjoiaW5ncmVzcy1raWQtMDEiLCJzaWciOiJJTkdSRVNTX1BPQ19TSUcifX0sImNvbnN0cmFpbnRzIjp7InRlbXBvcmFsIjp7ImlhdCI6MTc3MDAwMDAwNSwiZXhwIjoxNzcwMDAxODA1fX19.PCA_INT_CAT_B_SIG"
+      },
+      "artifacts": [],
+      "tokens": [
+        {
+          "name": "PCA_int_0 (Domain B internal root)",
+          "typ": "pca+cose",
+          "raw": "eyJhbGciOiJFZERTQSIsImtpZCI6ImNhdC1iLWtpZC0wMSIsInR5cCI6InBjYStjb3NlIn0.eyJob3AiOjAsInBfMCI6ImFsaWNlQHBhcnRuZXItYS5jb20iLCJvcHMiOlsicmVhZDpvcmRlcnMvKiJdLCJleGVjdXRvciI6eyJiaW5kaW5nIjoic3BpZmZlOi8vZW50ZXJwcmlzZS5jb20vc3ZjL29yZGVyLWFwaSJ9LCJwcm92ZW5hbmNlIjp7ImNhdCI6eyJraWQiOiJjYXQtYS1raWQtMDEiLCJzaWciOiJQQ0FfQV9DQVRfQV9TSUcifSwiZXhlY3V0b3IiOnsia2lkIjoiaW5ncmVzcy1raWQtMDEiLCJzaWciOiJJTkdSRVNTX1BPQ19TSUcifX0sImNvbnN0cmFpbnRzIjp7InRlbXBvcmFsIjp7ImlhdCI6MTc3MDAwMDAwNSwiZXhwIjoxNzcwMDAxODA1fX19.PCA_INT_CAT_B_SIG",
+          "header": {
+            "alg": "EdDSA",
+            "kid": "cat-b-kid-01",
+            "typ": "pca+cose"
+          },
+          "payload": {
+            "hop": 0,
+            "p_0": "alice@partner-a.com",
+            "ops": [
+              "read:orders/*"
+            ],
+            "executor": {
+              "binding": "spiffe://enterprise.com/svc/order-api"
+            },
+            "provenance": {
+              "cat": {
+                "kid": "cat-a-kid-01",
+                "sig": "PCA_A_CAT_A_SIG"
+              },
+              "executor": {
+                "kid": "ingress-kid-01",
+                "sig": "INGRESS_POC_SIG"
+              }
+            },
+            "constraints": {
+              "temporal": {
+                "iat": 1770000005,
+                "exp": 1770001805
+              }
+            }
+          },
+          "signature_b64": "PCA_INT_CAT_B_SIG"
+        }
+      ],
+      "is_response": true,
+      "explanation": "CAT_B mints PCA_int_0 — the root of the internal Domain B chain for this transaction. p_0 is preserved as alice@partner-a.com, ops is the intersected (read:orders/*), and provenance.cat back-references CAT_A's key so audit can reconstruct the full cross-domain chain. From this point, internal hops use the standard Causal Authority Transition flow against CAT_B.",
+      "annotations": [
+        "hop=0 from CAT_B's perspective even though the overall transaction is multi-hop. The cross-domain link lives in provenance.cat, not the hop number.",
+        "p_0=alice@partner-a.com inside Domain B is intentional — audit, RBAC, and OPA policies can match partner principals directly without a synthetic local user mapping.",
+        "PCA_int_0.exp (30 min from now) is well inside PCA_A_n.exp (1 hour remaining). Internal authority cannot outlive the partner authority that birthed it.",
+        "provenance.executor.sig=INGRESS_POC_SIG captures WHICH bridge admitted this transaction — critical for incident response."
+      ]
+    },
+    {
+      "step": 5,
+      "from": "ingress",
+      "to": "eb",
+      "label": "Forward + PCA_int_0",
+      "method": "POST",
+      "url": "https://order-api.enterprise.example.com/v1/orders",
+      "request_headers": {
+        "Content-Type": "application/json",
+        "X-PIC-PCA": "eyJhbGciOiJFZERTQSIs...PCA_INT_CAT_B_SIG",
+        "X-PIC-Request-Sig": "INGRESS_BODY_SIG",
+        "Host": "order-api.enterprise.example.com"
+      },
+      "request_body": {
+        "order_id": "ord-998877",
+        "operation": "fetch_status"
+      },
+      "response_status": 200,
+      "response_headers": {
+        "Content-Type": "application/json"
+      },
+      "response_body": {
+        "order_id": "ord-998877",
+        "status": "shipped",
+        "_pic_audit": {
+          "p_0": "alice@partner-a.com",
+          "executed_under_ops": [
+            "read:orders/*"
+          ],
+          "internal_hop": 0,
+          "executor": "spiffe://enterprise.com/svc/order-api",
+          "cross_domain_origin": {
+            "source_cat": "cat-a-kid-01",
+            "source_pca_sig": "PCA_A_CAT_A_SIG"
+          }
+        }
+      },
+      "artifacts": [],
+      "tokens": [],
+      "is_response": true,
+      "explanation": "The Ingress Bridge forwards the request to E_B (the first internal Domain B executor) with PCA_int_0. From E_B's perspective this is a plain PCA from CAT_B — no cross-domain knowledge required at this step. E_B verifies PCA_int_0 against CAT_B, confirms ops permits the read, executes. The audit envelope shows full provenance: alice@partner-a.com → CAT_A → Ingress Bridge → CAT_B → order-api.",
+      "annotations": [
+        "All cross-domain complexity ended at the bridge. E_B only sees a Domain B PCA — same logic it uses for any internal-origin request.",
+        "Subsequent internal hops (E_B calling another service) use plain Causal Authority Transition against CAT_B, monotonically restricting ops further.",
+        "On egress (response leaving Domain B back to Partner A), a symmetric Egress Bridge re-anchors Domain B PCAs into a Partner-A-trusted format. That mirror follows the same three invariants.",
+        "The cross_domain_origin audit block enables incident reconstruction months later: every read inside Domain B attributable to alice@partner-a.com is traceable to a specific signed PCA from CAT_A."
+      ]
+    }
+  ]
+}
