@@ -81,7 +81,7 @@ const NAV: NavSection[] = [
     title: "AAuth",
     color: "text-rose-400",
     items: [
-      { label: "Protocol Explorer ↗", href: process.env.NEXT_PUBLIC_AAUTH_URL || "https://aauth-implementation.vercel.app", external: true },
+      { label: "Protocol Explorer ↗", href: process.env.NEXT_PUBLIC_AAUTH_URL || "https://explorer.aauth.dev", external: true },
     ],
   },
   {
