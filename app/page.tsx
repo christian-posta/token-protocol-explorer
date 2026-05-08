@@ -127,7 +127,7 @@ const PROTOCOLS = [
     description:
       "AAuth is an Agent Authentication protocol designed for programmatic, autonomous agent-to-agent communication.",
     scenarios: [
-      { label: "Protocol Explorer", href: process.env.NEXT_PUBLIC_AAUTH_URL || "https://aauth-implementation.vercel.app", external: true },
+      { label: "Protocol Explorer", href: process.env.NEXT_PUBLIC_AAUTH_URL || "https://explorer.aauth.dev", external: true },
     ],
   },
   {
