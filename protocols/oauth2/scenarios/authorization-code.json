@@ -4,6 +4,9 @@
   "description": "The foundational OAuth 2.0 grant type for delegated user authorization. A client redirects the user to an Authorization Server, which authenticates the user and issues a short-lived authorization code. The client exchanges the code for tokens. PKCE (Proof Key for Code Exchange, RFC 7636) is layered on top to prevent authorization code interception attacks \u2014 mandatory for public clients and best practice for all.",
   "rfc": "RFC 6749 + RFC 7636",
   "specUrl": "https://datatracker.ietf.org/doc/html/rfc6749",
+  "relatedSpecs": [
+    { "label": "Security BCP (RFC 9700)", "url": "https://datatracker.ietf.org/doc/html/rfc9700" }
+  ],
   "category": "OAuth 2.0",
   "participants": [
     { "id": "browser", "label": "Browser / User", "type": "user" },

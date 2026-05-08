@@ -150,17 +150,31 @@ export function ScenarioPage({ scenario }: ScenarioPageProps) {
               {scenario.description}
             </p>
           </div>
-          {scenario.rfc && scenario.specUrl && (
-            <a
-              href={scenario.specUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
-            >
-              <BookOpen className="h-3.5 w-3.5" />
-              {scenario.rfc}
-            </a>
-          )}
+          <div className="flex items-center gap-3">
+            {scenario.rfc && scenario.specUrl && (
+              <a
+                href={scenario.specUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
+              >
+                <BookOpen className="h-3.5 w-3.5" />
+                {scenario.rfc}
+              </a>
+            )}
+            {scenario.relatedSpecs?.map((spec) => (
+              <a
+                key={spec.url}
+                href={spec.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
+              >
+                <BookOpen className="h-3.5 w-3.5" />
+                {spec.label}
+              </a>
+            ))}
+          </div>
         </div>
       </div>
 
