@@ -120,4 +120,4 @@ npm run lint
 
 ## License
 
-Private
+Apache 2.0
